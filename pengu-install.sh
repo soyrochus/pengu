@@ -1,28 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# pengu-install.sh — drop-in installer for Pengu
-# Downloads Dockerfile + pengu helper (and optionally .gitignore) from a GitHub repo.
-# Works anywhere; ideal for adding Pengu to an existing project folder.
+# pengu-install.sh — install Pengu into the current project (any folder)
+# Default source: soyrochus/pengu@main
 #
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/<your-org>/pengu/main/pengu-install.sh | bash -s -- [options]
+# Usage (most common):
+#   curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- -y
 #
-# Options:
-#   -y, --yes              Overwrite existing files without prompting
-#   --org ORG              GitHub org/user that hosts the Pengu repo      (default: <your-org>)
-#   --ref REF              Git ref to download from (branch/tag/commit)   (default: main)
-#   --with-gitignore       Also fetch .gitignore
-#   --files "A B ..."      Custom space-separated list of files to fetch  (default: Dockerfile pengu)
-#   --dest PATH            Destination directory (default: .)
-#   -h, --help             Show help
-#
-# After install:
-#   chmod +x pengu
-#   ./pengu up
-#   ./pengu shell
+# The script downloads Dockerfile + pengu into your current directory.
 
-ORG="<your-org>"
+REPO="soyrochus/pengu"
 REF="main"
 DEST="."
 YES=0
@@ -30,25 +17,20 @@ WITH_GITIGNORE=0
 FILES=("Dockerfile" "pengu")
 
 usage() {
-  sed -n '1,100p' "$0" | sed -n '1,80p' | sed -n '1,40p' >/dev/null 2>&1 || true
   cat <<EOF
-pengu-install.sh — install Pengu into the current project
-
-Usage:
-  $(basename "$0") [options]
+pengu-install.sh — install Pengu into the current folder
 
 Options:
-  -y, --yes              Overwrite existing files without prompting
-  --org ORG              GitHub org/user that hosts the Pengu repo      (default: $ORG)
-  --ref REF              Git ref to download from (branch/tag/commit)   (default: $REF)
-  --with-gitignore       Also fetch .gitignore
-  --files "A B ..."      Custom space-separated list of files to fetch  (default: ${FILES[*]})
-  --dest PATH            Destination directory (default: $DEST)
-  -h, --help             Show this help
+  -y, --yes            Overwrite existing files without asking
+  --with-gitignore     Also fetch .gitignore
+  --files "A B ..."    Custom list of files to fetch (default: ${FILES[*]})
+  --dest PATH          Destination directory (default: $DEST)
+  --repo ORG/REPO      Alternative GitHub repo (default: $REPO)
+  --ref REF            Branch, tag or commit (default: $REF)
 
 Examples:
-  $(basename "$0") --org my-org --ref main -y
-  $(basename "$0") --with-gitignore
+  curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- -y
+  curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- --with-gitignore -y
 EOF
 }
 
@@ -56,11 +38,11 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -y|--yes) YES=1; shift ;;
-    --org) ORG="${2:-}"; shift 2 ;;
-    --ref) REF="${2:-}"; shift 2 ;;
     --with-gitignore) WITH_GITIGNORE=1; shift ;;
     --files) IFS=' ' read -r -a FILES <<< "${2:-}"; shift 2 ;;
     --dest) DEST="${2:-}"; shift 2 ;;
+    --repo) REPO="${2:-}"; shift 2 ;;
+    --ref) REF="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -70,13 +52,11 @@ if [[ "$WITH_GITIGNORE" == "1" ]]; then
   FILES+=(".gitignore")
 fi
 
-# Ensure DEST exists
 mkdir -p "$DEST"
 
-# Download function
 fetch() {
   local file="$1"
-  local url="https://raw.githubusercontent.com/${ORG}/pengu/${REF}/${file}"
+  local url="https://raw.githubusercontent.com/${REPO}/${REF}/${file}"
   local out="${DEST%/}/$(basename "$file")"
 
   if [[ -e "$out" && "$YES" -ne 1 ]]; then
@@ -87,24 +67,25 @@ fetch() {
     esac
   fi
 
-  echo "Fetching $file …"
+  echo "Fetching $file from ${REPO}@${REF} …"
   if ! curl -fsSL "$url" -o "$out"; then
     echo "Error: failed to download $url" >&2
     exit 1
   fi
 }
 
-# Fetch files
 for f in "${FILES[@]}"; do
   fetch "$f"
 done
 
-# Make pengu executable if present
+# Make helper executable
 if [[ -f "${DEST%/}/pengu" ]]; then
   chmod +x "${DEST%/}/pengu"
 fi
 
-echo "🐧 Pengu installed."
+echo
+echo "🐧 Pengu installed in: $DEST"
 echo "Next steps:"
 echo "  ./pengu up"
 echo "  ./pengu shell"
+echo
