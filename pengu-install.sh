@@ -1,45 +1,36 @@
 #!/usr/bin/env bash
+# Pengu - Persistent Linux environment in a container
+# Copyright (c) 2025, Iwan van der Kleijn | MIT License
+# https://github.com/soyrochus/pengu
 set -euo pipefail
 
-# pengu-install.sh — install Pengu into the current project (any folder)
-# Default source: soyrochus/pengu@main
-#
-# Usage (most common):
-#   curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- -y
-#
-# The script downloads Dockerfile + pengu into your current directory.
-
+# Defaults
 REPO="soyrochus/pengu"
-REF="main"
+REF="refs/heads/main"   # use the path you confirmed works
 DEST="."
 YES=0
-WITH_GITIGNORE=0
-FILES=("Dockerfile" "pengu")
 
 usage() {
   cat <<EOF
-pengu-install.sh — install Pengu into the current folder
+pengu-install.sh — install Pengu (macOS/Linux)
+
+Downloads Dockerfile and the Bash helper 'pengu' into the target folder.
 
 Options:
-  -y, --yes            Overwrite existing files without asking
-  --with-gitignore     Also fetch .gitignore
-  --files "A B ..."    Custom list of files to fetch (default: ${FILES[*]})
-  --dest PATH          Destination directory (default: $DEST)
-  --repo ORG/REPO      Alternative GitHub repo (default: $REPO)
-  --ref REF            Branch, tag or commit (default: $REF)
+  -y, --yes            Overwrite existing files without prompting
+  --dest PATH          Destination directory (default: .)
+  --repo ORG/REPO      GitHub repo to fetch from (default: $REPO)
+  --ref REF            Git ref path (default: $REF) — e.g. refs/heads/main
 
 Examples:
-  curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- -y
-  curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- --with-gitignore -y
+  curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/refs/heads/main/pengu-install.sh | bash -s -- -y
+  bash pengu-install.sh --dest ./tools/pengu -y
 EOF
 }
 
-# Parse args
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -y|--yes) YES=1; shift ;;
-    --with-gitignore) WITH_GITIGNORE=1; shift ;;
-    --files) IFS=' ' read -r -a FILES <<< "${2:-}"; shift 2 ;;
     --dest) DEST="${2:-}"; shift 2 ;;
     --repo) REPO="${2:-}"; shift 2 ;;
     --ref) REF="${2:-}"; shift 2 ;;
@@ -48,40 +39,25 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$WITH_GITIGNORE" == "1" ]]; then
-  FILES+=(".gitignore")
-fi
-
 mkdir -p "$DEST"
+BASE="https://raw.githubusercontent.com/${REPO}/${REF}"
 
 fetch() {
-  local file="$1"
-  local url="https://raw.githubusercontent.com/${REPO}/${REF}/${file}"
-  local out="${DEST%/}/$(basename "$file")"
-
-  if [[ -e "$out" && "$YES" -ne 1 ]]; then
-    read -rp "File '$out' exists. Overwrite? [y/N] " ans
-    case "$ans" in
-      y|Y|yes|YES) ;;
-      *) echo "Skipping $out"; return 0 ;;
-    esac
+  local src="$1" dst="$2"
+  if [[ -e "$dst" && "$YES" -ne 1 ]]; then
+    read -rp "File '$dst' exists. Overwrite? [y/N] " a
+    [[ "$a" =~ ^([yY]|yes)$ ]] || { echo "Skipping $dst"; return; }
   fi
-
-  echo "Fetching $file from ${REPO}@${REF} …"
-  if ! curl -fsSL "$url" -o "$out"; then
-    echo "Error: failed to download $url" >&2
-    exit 1
-  fi
+  echo "Fetching $src …"
+  curl -fsSL "$BASE/$src" -o "$dst"
 }
 
-for f in "${FILES[@]}"; do
-  fetch "$f"
-done
+# Download Dockerfile and Bash helper
+fetch "Dockerfile" "${DEST%/}/Dockerfile"
+fetch "pengu"      "${DEST%/}/pengu"
 
 # Make helper executable
-if [[ -f "${DEST%/}/pengu" ]]; then
-  chmod +x "${DEST%/}/pengu"
-fi
+chmod +x "${DEST%/}/pengu" || true
 
 echo
 echo "🐧 Pengu installed in: $DEST"

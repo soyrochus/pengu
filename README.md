@@ -1,3 +1,12 @@
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Bash/Shell](https://img.shields.io/badge/Bash/Shell-4EAA25.svg?logo=gnu-bash&logoColor=white)
+![PowerShell](https://img.shields.io/badge/PowerShell-5391FE.svg?logo=powershell&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED.svg?logo=docker&logoColor=white)
+![OS: macOS | Linux | Windows](https://img.shields.io/badge/OS-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
+[![FOSS Pluralism Manifesto](https://img.shields.io/badge/Manifesto-FOSS%20Pluralism-8A2BE2.svg)](FOSS_PLURALISM_MANIFESTO.md)
+[![Contributions welcome](https://img.shields.io/badge/Contributions-welcome-brightgreen.svg)](https://github.com/soyrochus/wormhole/issues)
+
 # Pengu — your persistent Linux buddy
 
 **Pengu** gives you a **real, persistent Linux environment** inside a container — instantly available from any operating system:  
@@ -39,20 +48,41 @@ In short:
 
 ## 🪄 Quick install (one line)
 
-Copy this into any project folder (it doesn’t need to be a git repo):
+Copy this into any project folder (it doesn't need to be a git repo):
+
+### Linux/macOS (Bash)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- -y
-````
+```
 
-That’s it!
-It downloads two files (`Dockerfile` and `pengu`) into your current directory.
+### Windows (PowerShell)
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.ps1 | iex
+```
+
+That's it!
+
+**What gets downloaded:**
+
+- **Bash install**: `Dockerfile` and `pengu` (bash script)
+- **PowerShell install**: `Dockerfile`, `pengu.ps1`, and `pengu` (for compatibility)
 
 Then start Pengu:
+
+**Linux/macOS:**
 
 ```bash
 ./pengu up
 ./pengu shell
+```
+
+**Windows:**
+
+```powershell
+.\pengu.ps1 up
+.\pengu.ps1 shell
 ```
 
 You’re now inside Ubuntu 24.04 with your project mounted at `/workspace`.
@@ -98,9 +128,18 @@ This design keeps your environments clean, isolated, and disposable.
 
 ## 🧯 Remove Pengu from a project
 
+**Linux/macOS:**
+
 ```bash
-rm -f Dockerfile pengu
+rm -f Dockerfile pengu pengu.sh pengu.ps1
 podman volume rm -f "$(basename "$PWD")-pengu-home" || true
+```
+
+**Windows (PowerShell):**
+
+```powershell
+Remove-Item -Force -ErrorAction SilentlyContinue Dockerfile, pengu, pengu.sh, pengu.ps1
+podman volume rm -f "$((Get-Item .).Name)-pengu-home"
 ```
 
 ---
@@ -121,10 +160,13 @@ That’s all your teammates need — no local setup, no WSL, no VMs.
 
 This repo (`soyrochus/pengu`) contains:
 
-```
+```text
 Dockerfile         # Base Ubuntu + banner
-pengu              # Local helper script installed in projects
-pengu-install.sh   # Installer users run via curl | bash
+pengu              # Bash helper script (symlinked to pengu.sh)
+pengu.sh           # Bash helper script installed in projects  
+pengu.ps1          # PowerShell helper script for Windows
+pengu-install.sh   # Bash installer users run via curl | bash
+pengu-install.ps1  # PowerShell installer for Windows
 .gitignore
 README.md
 ```
@@ -145,3 +187,18 @@ When you update Pengu:
 
 **Pengu** — a penguin in your pocket. 🐧
 
+
+## Principles of Participation
+
+Everyone is invited and welcome to contribute: open issues, propose pull requests, share ideas, or help improve documentation.  
+Participation is open to all, regardless of background or viewpoint.  
+
+This project follows the [FOSS Pluralism Manifesto](./FOSS_PLURALISM_MANIFESTO.md),  
+which affirms respect for people, freedom to critique ideas, and space for diverse perspectives.  
+
+
+## License and Copyright
+
+Copyright (c) 2025, Iwan van der Kleijn
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

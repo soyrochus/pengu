@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Pengu - Persistent Linux environment in a container
+# Copyright (c) 2025, Iwan van der Kleijn | MIT License
+# https://github.com/soyrochus/pengu
+
+set -euo pipefail
+
+# Choose engine
+if command -v podman >/dev/null 2>&1; then ENG=podman
+elif command -v docker >/dev/null 2>&1; then ENG=docker
+else echo "Need podman or docker in PATH." >&2; exit 1; fi
+
+PROJECT="${PROJECT_NAME:-$(basename "$PWD")}"
+IMAGE="pengu:${PROJECT}"
+CONTAINER="${PROJECT}-pengu"
+HOMEVOL="${PROJECT}-pengu-home"
+APTVOL="${PROJECT}-pengu-apt"
+LISTSVOL="${PROJECT}-pengu-lists"
+
+uid(){ id -u; }
+gid(){ id -g; }
+
+build() {
+  $ENG build -t "$IMAGE" \
+    --build-arg UID="$(uid)" \
+    --build-arg GID="$(gid)" \
+    --build-arg USERNAME=pengu \
+    .
+}
+
+create_if_needed() {
+  $ENG container exists "$CONTAINER" >/dev/null 2>&1 || \
+  $ENG create --name "$CONTAINER" \
+    -v "$PWD:/workspace:Z" \
+    -v "$HOMEVOL:/home/pengu:Z" \
+    -v "$APTVOL:/var/cache/apt:Z" \
+    -v "$LISTSVOL:/var/lib/apt/lists:Z" \
+    "$IMAGE" tail -f /dev/null >/dev/null
+}
+
+case "${1:-}" in
+  up)      build; create_if_needed; $ENG start "$CONTAINER"; echo "Pengu up → ./pengu shell" ;;
+  shell)   $ENG exec -it "$CONTAINER" bash || { "$0" up; $ENG exec -it "$CONTAINER" bash; } ;;
+  root)    $ENG exec -it --user 0 "$CONTAINER" bash || { "$0" up; $ENG exec -it --user 0 "$CONTAINER" bash; } ;;
+  stop)    $ENG stop "$CONTAINER" || true ;;
+  rm)      $ENG rm -f "$CONTAINER" || true ;;
+  rebuild) $ENG rm -f "$CONTAINER" || true; build; create_if_needed; $ENG start "$CONTAINER" ;;
+  commit)  $ENG commit "$CONTAINER" "$IMAGE"; echo "Committed → $IMAGE" ;;
+  nuke)    $ENG rm -f "$CONTAINER" || true; $ENG volume rm -f "$HOMEVOL" "$APTVOL" "$LISTSVOL" || true ;;
+  *)
+    cat <<EOF
+Usage: ./pengu {up|shell|root|stop|rm|rebuild|commit|nuke}
+EOF
+  ;;
+esac
