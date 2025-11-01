@@ -423,7 +423,35 @@ curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.
 
 That’s all your teammates need — no local setup, no WSL, no VMs.
 
----
+
+## 📝 Incorporate minimal Pengu documentation in your README
+
+To include a segment with explanation of and pointer to Pengu, you could add the following segment to your README.
+
+````text
+## 🐧 Development Environment
+
+This project uses [Pengu](https://github.com/soyrochus/pengu) — a tool that gives you a persistent Linux environment in a container, instantly available from any operating system.
+
+**Get started:**
+```bash
+# Install Pengu (Linux/macOS)
+curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- -y
+
+# Start your Linux environment
+./pengu up && ./pengu shell
+```
+
+**Windows:**
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.ps1 | iex
+.\pengu.ps1 up; .\pengu.ps1 shell
+```
+
+Your project files are available at `/workspace` with all dependencies pre-configured. No local setup required.
+
+````
 
 ## 🛠 Maintainers
 
