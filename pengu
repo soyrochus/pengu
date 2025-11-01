@@ -20,6 +20,40 @@ LISTSVOL="${PROJECT}-pengu-lists"
 uid(){ id -u; }
 gid(){ id -g; }
 
+container_exists() {
+  if [ "$ENG" = "podman" ]; then
+    $ENG container exists "$CONTAINER" >/dev/null 2>&1 || return 1
+  else
+    $ENG container inspect "$CONTAINER" >/dev/null 2>&1 || return 1
+  fi
+}
+
+stop_container() {
+  if container_exists; then
+    $ENG stop "$CONTAINER" >/dev/null 2>&1 || true
+  fi
+}
+
+remove_container() {
+  if ! container_exists; then
+    return
+  fi
+
+  if [ "$ENG" = "podman" ]; then
+    $ENG rm -f "$CONTAINER" >/dev/null 2>&1 || $ENG container rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  else
+    $ENG rm -f "$CONTAINER" >/dev/null 2>&1 || $ENG container rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  fi
+
+  if container_exists; then
+    echo "Warning: unable to remove container $CONTAINER" >&2
+  fi
+}
+
+remove_volumes() {
+  $ENG volume rm -f "$HOMEVOL" "$APTVOL" "$LISTSVOL" >/dev/null 2>&1 || true
+}
+
 show_help() {
   cat <<EOF
 Pengu - Your persistent Linux buddy
@@ -85,12 +119,17 @@ build() {
 }
 
 create_if_needed() {
-  $ENG container exists "$CONTAINER" >/dev/null 2>&1 || \
+  local selinux_suffix=""
+  if [ "$ENG" = "podman" ]; then
+    selinux_suffix=":Z"
+  fi
+
+  container_exists || \
   $ENG create --name "$CONTAINER" \
-    -v "$PWD:/workspace:Z" \
-    -v "$HOMEVOL:/home/pengu:Z" \
-    -v "$APTVOL:/var/cache/apt:Z" \
-    -v "$LISTSVOL:/var/lib/apt/lists:Z" \
+    -v "$PWD:/workspace${selinux_suffix}" \
+    -v "$HOMEVOL:/home/pengu${selinux_suffix}" \
+    -v "$APTVOL:/var/cache/apt${selinux_suffix}" \
+    -v "$LISTSVOL:/var/lib/apt/lists${selinux_suffix}" \
     "$IMAGE" tail -f /dev/null >/dev/null
 }
 
@@ -98,14 +137,14 @@ case "${1:-}" in
   up)      build; create_if_needed; $ENG start "$CONTAINER"; echo "Pengu up → ./pengu shell" ;;
   shell)   $ENG exec -it "$CONTAINER" bash || { "$0" up; $ENG exec -it "$CONTAINER" bash; } ;;
   root)    $ENG exec -it --user 0 "$CONTAINER" bash || { "$0" up; $ENG exec -it --user 0 "$CONTAINER" bash; } ;;
-  stop)    $ENG stop "$CONTAINER" || true ;;
-  rm)      $ENG rm -f "$CONTAINER" || true ;;
-  rebuild) $ENG rm -f "$CONTAINER" || true; build; create_if_needed; $ENG start "$CONTAINER" ;;
+  stop)    stop_container ;;
+  rm)      remove_container ;;
+  rebuild) remove_container; build; create_if_needed; $ENG start "$CONTAINER" ;;
   commit)  $ENG commit "$CONTAINER" "$IMAGE"; echo "Committed → $IMAGE" ;;
-  nuke)    $ENG rm -f "$CONTAINER" || true; $ENG volume rm -f "$HOMEVOL" "$APTVOL" "$LISTSVOL" || true ;;
+  nuke)    stop_container; remove_container; remove_volumes ;;
   help|--help|-h) show_help ;;
   "")
-    echo "Usage: ./pengu [COMMAND]"
+    echo "Usage: ./pengu {up|shell|root|stop|rm|rebuild|commit|nuke|help}"
     echo "Try './pengu help' for more information."
     ;;
   *)

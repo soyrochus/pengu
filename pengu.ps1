@@ -21,6 +21,51 @@ $Container = "$Project-pengu"
 $HomeVol = "$Project-pengu-home"
 $AptVol = "$Project-pengu-apt"
 $ListsVol = "$Project-pengu-lists"
+$Uid = if ($env:PENGU_UID) { [int]$env:PENGU_UID } else { 1000 }
+$Gid = if ($env:PENGU_GID) { [int]$env:PENGU_GID } else { 1000 }
+$SelinuxSuffix = if ($ENG -eq "podman") { ":Z" } else { "" }
+
+function Test-ContainerExists {
+  param([string]$Name)
+  if ($ENG -eq "podman") {
+    & $ENG container exists $Name > $null 2>&1
+  }
+  else {
+    & $ENG container inspect $Name > $null 2>&1
+  }
+  return ($LASTEXITCODE -eq 0)
+}
+
+function Stop-Container {
+  if (Test-ContainerExists -Name $Container) {
+    & $ENG stop $Container > $null 2>&1
+  }
+}
+
+function Remove-Container {
+  if (-not (Test-ContainerExists -Name $Container)) { return }
+
+  if ($ENG -eq "podman") {
+    & $ENG rm -f $Container > $null 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      & $ENG container rm -f $Container > $null 2>&1
+    }
+  }
+  else {
+    & $ENG rm -f $Container > $null 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      & $ENG container rm -f $Container > $null 2>&1
+    }
+  }
+
+  if (Test-ContainerExists -Name $Container) {
+    Write-Warning "Unable to remove container $Container"
+  }
+}
+
+function Remove-Volumes {
+  & $ENG volume rm -f $HomeVol $AptVol $ListsVol > $null 2>&1
+}
 
 function Show-Help {
 @"
@@ -79,22 +124,21 @@ For more info: https://github.com/soyrochus/pengu
 }
 
 function Build {
-  & $ENG build -t $Image --build-arg UID=1000 --build-arg GID=1000 --build-arg USERNAME=pengu .
+  & $ENG build -t $Image --build-arg UID=$Uid --build-arg GID=$Gid --build-arg USERNAME=pengu .
 }
 function CreateIfNeeded {
-  & $ENG container exists $Container | Out-Null
-  if ($LASTEXITCODE -ne 0) {
+  if (-not (Test-ContainerExists -Name $Container)) {
     & $ENG create --name $Container `
-      -v "$(Get-Location):/workspace:Z" `
-      -v "$HomeVol:/home/pengu:Z" `
-      -v "$AptVol:/var/cache/apt:Z" `
-      -v "$ListsVol:/var/lib/apt/lists:Z" `
+      -v "$(Get-Location):/workspace$SelinuxSuffix" `
+      -v "$HomeVol:/home/pengu$SelinuxSuffix" `
+      -v "$AptVol:/var/cache/apt$SelinuxSuffix" `
+      -v "$ListsVol:/var/lib/apt/lists$SelinuxSuffix" `
       $Image tail -f /dev/null | Out-Null
   }
 }
 
 if (-not $Cmd) {
-  Write-Host "Usage: .\pengu.ps1 [COMMAND]"
+  Write-Host "Usage: .\pengu.ps1 {up|shell|root|stop|rm|rebuild|commit|nuke}"
   Write-Host "Try '.\pengu.ps1 help' for more information."
   exit 1
 }
@@ -103,11 +147,11 @@ switch ($Cmd) {
   "up"      { Build; CreateIfNeeded; & $ENG start $Container; Write-Host "Pengu up → .\pengu.ps1 shell" }
   "shell"   { & $ENG exec -it $Container bash; if ($LASTEXITCODE -ne 0) { & $PSCommandPath up; & $ENG exec -it $Container bash } }
   "root"    { & $ENG exec -it --user 0 $Container bash; if ($LASTEXITCODE -ne 0) { & $PSCommandPath up; & $ENG exec -it --user 0 $Container bash } }
-  "stop"    { & $ENG stop $Container | Out-Null }
-  "rm"      { & $ENG rm -f $Container | Out-Null }
-  "rebuild" { & $ENG rm -f $Container | Out-Null; Build; CreateIfNeeded; & $ENG start $Container }
+  "stop"    { Stop-Container }
+  "rm"      { Remove-Container }
+  "rebuild" { Remove-Container; Build; CreateIfNeeded; & $ENG start $Container }
   "commit"  { & $ENG commit $Container $Image | Out-Null; Write-Host "Committed → $Image" }
-  "nuke"    { & $ENG rm -f $Container | Out-Null; & $ENG volume rm -f $HomeVol $AptVol $ListsVol | Out-Null }
+  "nuke"    { Stop-Container; Remove-Container; Remove-Volumes }
   "help"    { Show-Help }
   default   { 
     Write-Host "Error: Unknown command '$Cmd'" -ForegroundColor Red
