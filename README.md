@@ -85,7 +85,276 @@ Then start Pengu:
 .\pengu.ps1 shell
 ```
 
-You’re now inside Ubuntu 24.04 with your project mounted at `/workspace`.
+You're now inside Ubuntu 24.04 with your project mounted at `/workspace`.
+
+---
+
+## 🚀 Getting started
+
+### Your first Pengu session
+
+After installation, here's your typical workflow:
+
+```bash
+# Start Pengu (builds container on first run)
+./pengu up
+
+# Enter your Linux environment
+./pengu shell
+
+# You're now inside Ubuntu! Your project is at /workspace
+cd /workspace
+ls -la
+
+# Install something for this project
+pip install requests
+sudo apt install htop
+
+# Exit when done
+exit
+
+# Your installed packages persist between sessions
+./pengu shell  # Everything you installed is still there!
+```
+
+### When to use each command
+
+- **`./pengu shell`** - Your daily driver. Opens as regular user `pengu`
+- **`./pengu root`** - When you need system privileges (installing packages with `apt`)
+- **`./pengu stop`** - Pause Pengu when not needed (saves resources)
+- **`./pengu rebuild`** - Start fresh but keep your data (useful after Dockerfile changes)
+- **`./pengu commit`** - Save current state as a new base image (for custom setups)
+- **`./pengu nuke`** - Complete reset when you want to start over
+
+### Common workflows
+
+**Installing system packages:**
+
+```bash
+./pengu root
+sudo apt update && sudo apt install nodejs npm
+exit
+./pengu shell  # Back to regular user with nodejs available
+```
+
+**Python development:**
+
+```bash
+./pengu shell
+pip install django flask  # Installs to /home/pengu/.local/bin
+python -m django startproject myapp
+```
+
+**Creating a custom base:**
+
+```bash
+./pengu shell
+# Install everything you need...
+exit
+./pengu commit  # Saves current state
+# Now `./pengu up` uses your customized image
+```
+
+---
+
+## 📖 Reference
+
+### Command reference
+
+| Command           | Description                        | Data preserved |
+| ----------------- | ---------------------------------- | -------------- |
+| `./pengu up`      | Build and start Pengu              | All            |
+| `./pengu shell`   | Enter Ubuntu shell as user `pengu` | All            |
+| `./pengu root`    | Enter as root                      | All            |
+| `./pengu stop`    | Stop container                     | All            |
+| `./pengu rm`      | Remove container (keep data)       | All volumes    |
+| `./pengu rebuild` | Rebuild from Dockerfile            | All volumes    |
+| `./pengu commit`  | Save current state into image      | All            |
+| `./pengu nuke`    | Delete container **and** volumes   | Nothing        |
+| `./pengu help`    | Show detailed help                 | -              |
+
+### Platform differences
+
+**Linux/macOS:**
+
+- Uses `./pengu` (bash script)
+- SELinux labels applied automatically on Podman
+- File permissions match your host user
+
+**Windows:**
+
+- Uses `.\pengu.ps1` (PowerShell script)
+- Also installs `pengu` bash script for compatibility
+- Fixed UID/GID (1000:1000) for simplicity
+
+---
+
+## 🔧 Under the hood
+
+### Container architecture
+
+Pengu creates a lightweight Ubuntu 24.04 container with these characteristics:
+
+- **Base image**: `ubuntu:24.04` with essential tools pre-installed
+- **User setup**: Creates a `pengu` user matching your host UID/GID (Linux/macOS)
+- **Working directory**: `/workspace` (your project folder)
+- **Default command**: `tail -f /dev/null` (keeps container running)
+
+### Volume strategy
+
+Pengu uses a 4-volume strategy for optimal performance and persistence:
+
+#### 1. **Project workspace** (bind mount)
+
+```text
+Host: $PWD → Container: /workspace
+```
+
+- **Purpose**: Direct access to your project files
+- **Behavior**: Real-time sync between host and container
+- **Persistence**: Lives on your host filesystem
+- **Performance**: Native filesystem speed
+
+#### 2. **User home directory** (named volume)
+
+```text
+Volume: ${PROJECT}-pengu-home → Container: /home/pengu
+```
+
+- **Purpose**: Personal Linux environment
+- **Contains**:
+  - Dotfiles (`.bashrc`, `.vimrc`, `.gitconfig`)
+  - Shell history and personal settings
+  - Python packages (`pip install --user`)
+  - SSH keys and credentials
+  - Any files created in user's home
+- **Persistence**: Survives container rebuilds
+- **Isolation**: Separate per project
+
+#### 3. **APT package cache** (named volume)
+
+```text
+Volume: ${PROJECT}-pengu-apt → Container: /var/cache/apt
+```
+
+- **Purpose**: Downloaded `.deb` package files
+- **Benefit**: Dramatically speeds up repeated `apt install` commands
+- **Behavior**: Packages downloaded once, reused forever
+- **Size impact**: Can grow large but saves bandwidth
+
+#### 4. **APT metadata cache** (named volume)
+
+```text
+Volume: ${PROJECT}-pengu-lists → Container: /var/lib/apt/lists
+```
+
+- **Purpose**: Package repository indexes and metadata
+- **Benefit**: Faster `apt update` operations
+- **Behavior**: Avoids re-downloading package lists
+- **Updates**: Refreshed when you run `apt update`
+
+### Container lifecycle
+
+```mermaid
+graph TD
+    A[./pengu up] --> B{Image exists?}
+    B -->|No| C[Build from Dockerfile]
+    B -->|Yes| D{Container exists?}
+    C --> D
+    D -->|No| E[Create container with volumes]
+    D -->|Yes| F[Start existing container]
+    E --> F
+    F --> G[Container running]
+    
+    G --> H[./pengu shell/root]
+    G --> I[./pengu stop]
+    G --> J[./pengu rm]
+    G --> K[./pengu nuke]
+    
+    I --> L[Container stopped]
+    J --> M[Container deleted, volumes kept]
+    K --> N[Everything deleted]
+    
+    L --> F
+    M --> D
+```
+
+### Security model
+
+- **User mapping**: Container user matches host user (prevents permission issues)
+- **SELinux**: Automatic `:Z` labels on Podman for proper file access
+- **Network**: Container has network access but no exposed ports by default
+- **Filesystem**: Only your project directory is accessible to container
+
+### Storage efficiency
+
+Each project gets isolated storage:
+
+```text
+myproject/
+├── Dockerfile           # Container definition
+├── pengu               # Bash script
+├── pengu.ps1           # PowerShell script  
+└── your-project-files/
+
+Docker volumes:
+├── myproject-pengu-home    # User home (~50-200MB typical)
+├── myproject-pengu-apt     # Package cache (~100-500MB)
+└── myproject-pengu-lists   # Metadata (~10-50MB)
+```
+
+### Performance characteristics
+
+- **Startup time**: ~1-3 seconds for existing containers
+- **Build time**: ~30-60 seconds for first `./pengu up`
+- **Package installs**: 2-5x faster after first install (due to caching)
+- **File operations**: Native speed (bind mounts)
+- **Memory usage**: ~50-100MB base + your applications
+
+### What persists between operations
+
+**What survives what:**
+
+- **Container restart** (`./pengu stop` → `./pengu up`): Everything
+- **Container rebuild** (`./pengu rebuild`): All volumes, fresh container
+- **Image rebuild** (modify Dockerfile → `./pengu rebuild`): All volumes
+- **System reboot**: Everything (volumes are persistent)
+- **Pengu nuke** (`./pengu nuke`): Nothing (complete reset)
+
+### Project isolation benefits
+
+**Benefits:**
+
+- **No dependency conflicts** between projects
+- **Experiment freely** without affecting other projects  
+- **Quick cleanup** with `./pengu nuke`
+- **Reproducible environments** for team members
+
+Each project gets its own Pengu container and volumes, automatically named after the folder (e.g. `myapp-pengu`).
+This design keeps your environments clean, isolated, and disposable.
+
+> Want a fresh start?
+> Run `./pengu nuke` — all gone, instantly.
+
+### Removing Pengu from a project
+
+**Linux/macOS:**
+
+```bash
+rm -f Dockerfile pengu pengu.sh pengu.ps1
+podman volume rm -f "$(basename "$PWD")-pengu-home" || true
+```
+
+**Windows (PowerShell):**
+
+```powershell
+Remove-Item -Force -ErrorAction SilentlyContinue Dockerfile, pengu, pengu.sh, pengu.ps1
+podman volume rm -f "$((Get-Item .).Name)-pengu-home"
+```
+
+---
+
+## 🧩 For teams and templates
 
 ---
 
