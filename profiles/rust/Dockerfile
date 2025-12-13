@@ -55,4 +55,7 @@ USER ${USERNAME}
 # Rust official image already provides rustup/cargo; ensure user sees cargo bins if needed
 ENV PATH="/home/${USERNAME}/.cargo/bin:/home/${USERNAME}/.local/bin:${PATH}"
 
+# Keep Rust build artifacts out of /workspace to avoid host bind-mount permission quirks
+ENV CARGO_TARGET_DIR="/home/pengu/.cargo/target"
+
 CMD ["bash"]
