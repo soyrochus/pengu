@@ -14,7 +14,7 @@ usage() {
   cat <<EOF
 pengu-install.sh — install Pengu (macOS/Linux)
 
-Downloads Dockerfile and the Bash helper 'pengu' into the target folder.
+Downloads the Pengu helper and default Pengufile into the target folder.
 
 Options:
   -y, --yes            Overwrite existing files without prompting
@@ -52,8 +52,10 @@ fetch() {
   curl -fsSL "$BASE/$src" -o "$dst"
 }
 
-# Download Dockerfile and Bash helper
-fetch "Dockerfile" "${DEST%/}/Dockerfile"
+mkdir -p "${DEST%/}/.pengu"
+
+# Download Pengufile (default profile) and Bash helper
+fetch "Dockerfile" "${DEST%/}/.pengu/Pengufile"
 fetch "pengu"      "${DEST%/}/pengu"
 
 # Make helper executable

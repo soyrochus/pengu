@@ -22,9 +22,10 @@ function Fetch($Src, $Dst) {
 }
 
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $Dest ".pengu") | Out-Null
 
-# Download Dockerfile and the PowerShell helper
-Fetch -Src "Dockerfile" -Dst (Join-Path $Dest "Dockerfile")
+# Download default Pengufile and the PowerShell helper
+Fetch -Src "Dockerfile" -Dst (Join-Path $Dest ".pengu/Pengufile")
 Fetch -Src "pengu.ps1"  -Dst (Join-Path $Dest "pengu.ps1")
 
 # Also provide the Bash helper for Git Bash/WSL users (optional but handy)

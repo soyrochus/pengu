@@ -17,7 +17,7 @@
 It’s a lightweight way to have a *personal Ubuntu machine* always mapped to your project folder.  
 Whatever you install or configure inside Pengu stays there — between runs, reboots, or even host restarts.
 
-> 🧩 One project → one Pengu container.  
+> 🧩 One project → one Pengu container (per profile).  
 > Persistent. Portable. Zero configuration.
 
 ---
@@ -64,10 +64,14 @@ iwr -useb https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.p
 
 That's it!
 
+Pengu keeps its config in `.pengu/`:
+- `.pengu/Pengufile` is the default build file
+- Add `.pengu/Pengufile.<name>` for extra profiles, then `./pengu up <name>`
+
 **What gets downloaded:**
 
-- **Bash install**: `Dockerfile` and `pengu` (bash script)
-- **PowerShell install**: `Dockerfile`, `pengu.ps1`, and `pengu` (for compatibility)
+- **Bash install**: `.pengu/Pengufile` (Dockerfile syntax) and `pengu` (bash script)
+- **PowerShell install**: `.pengu/Pengufile`, `pengu.ps1`, and `pengu` (for compatibility)
 
 Then start Pengu:
 
@@ -202,7 +206,7 @@ Pengu creates a lightweight Ubuntu 24.04 container with these characteristics:
 
 ### Volume strategy
 
-Pengu uses a 4-volume strategy for optimal performance and persistence:
+Pengu uses a 4-volume strategy for optimal performance and persistence (per profile, e.g. `<project>-pengu-default-home`):
 
 #### 1. **Project workspace** (bind mount)
 
@@ -410,6 +414,87 @@ podman volume rm -f "$(basename "$PWD")-pengu-home" || true
 Remove-Item -Force -ErrorAction SilentlyContinue Dockerfile, pengu, pengu.sh, pengu.ps1
 podman volume rm -f "$((Get-Item .).Name)-pengu-home"
 ```
+
+---
+
+## 🧩 Using Pengu with Visual Studio Code 
+
+The recommended way to use Pengu with **Visual Studio Code** is to **attach VS Code to a running Pengu container**.
+
+In this setup:
+
+* VS Code runs **natively on your host**
+* Your project files stay on the host filesystem
+* All **tooling, terminals, language servers, and debuggers run inside Pengu**
+* `/workspace` inside Pengu is used as the project root
+
+This gives you full IDE support with clean, container-isolated environments.
+
+---
+
+### Requirements
+
+* Visual Studio Code on the host
+* VS Code extension: **Dev Containers**
+* Pengu container running via Podman or Docker
+
+---
+
+### One-time setup (Podman)
+
+VS Code connects via a Docker-compatible API.
+If you use Podman, expose its socket:
+
+```bash
+podman system service --time=0 &
+```
+
+(Optional but recommended)
+
+```bash
+export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+```
+
+---
+
+### Attach VS Code to a running Pengu container
+
+1. Start Pengu:
+
+   ```bash
+   ./pengu up
+   ```
+2. Open VS Code
+3. Open the Command Palette:
+
+   * macOS: `Cmd + Shift + P`
+   * Linux / Windows: `Ctrl + Shift + P`
+4. Run:
+
+   ```
+   Dev Containers: Attach to Running Container
+   ```
+5. Select your Pengu container, for example:
+
+   ```
+   myproject-pengu-default
+   myproject-pengu-java25
+   myproject-pengu-rust
+   ```
+
+VS Code will reopen attached to the container and use `/workspace` automatically.
+
+---
+
+### Why this works well
+
+* Native VS Code UX with container-isolated toolchains
+* No file copying or rebuilding
+* Works across macOS, Linux, and Windows
+* Clean support for multiple Pengu profiles per project
+
+This is the preferred way to use Pengu with Visual Studio Code.
+
 
 ---
 

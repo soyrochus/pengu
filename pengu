@@ -11,14 +11,52 @@ elif command -v docker >/dev/null 2>&1; then ENG=docker
 else echo "Need podman or docker in PATH." >&2; exit 1; fi
 
 PROJECT="${PROJECT_NAME:-$(basename "$PWD")}"
-IMAGE="pengu:${PROJECT}"
-CONTAINER="${PROJECT}-pengu"
-HOMEVOL="${PROJECT}-pengu-home"
-APTVOL="${PROJECT}-pengu-apt"
-LISTSVOL="${PROJECT}-pengu-lists"
+CMD="${1:-}"
+PROFILE="${2:-default}"
+
+IMAGE="pengu:${PROJECT}-${PROFILE}"
+CONTAINER="${PROJECT}-pengu-${PROFILE}"
+HOMEVOL="${PROJECT}-pengu-${PROFILE}-home"
+APTVOL="${PROJECT}-pengu-${PROFILE}-apt"
+LISTSVOL="${PROJECT}-pengu-${PROFILE}-lists"
 
 uid(){ id -u; }
 gid(){ id -g; }
+
+resolve_pengufile() {
+  local profile="$1"
+  local base=".pengu"
+  local path
+
+  if [ "$profile" = "default" ]; then
+    path="${base}/Pengufile"
+    if [ -f "$path" ]; then
+      echo "$path"
+      return 0
+    fi
+
+    if [ -f "Dockerfile" ]; then
+      echo "WARNING: Using Dockerfile is deprecated." >&2
+      echo "WARNING: Please migrate to .pengu/Pengufile." >&2
+      echo "Dockerfile"
+      return 0
+    fi
+  else
+    path="${base}/Pengufile.${profile}"
+    if [ -f "$path" ]; then
+      echo "$path"
+      return 0
+    fi
+  fi
+
+  echo "Error: Pengufile for profile '${profile}' not found." >&2
+  if [ "$profile" = "default" ]; then
+    echo "Expected ${base}/Pengufile in project root." >&2
+  else
+    echo "Expected ${base}/Pengufile.${profile} in project root." >&2
+  fi
+  exit 1
+}
 
 container_exists() {
   if [ "$ENG" = "podman" ]; then
@@ -59,7 +97,8 @@ show_help() {
 Pengu - Your persistent Linux buddy
 
 USAGE:
-  ./pengu [COMMAND]
+  ./pengu COMMAND [PROFILE]
+  # PROFILE defaults to 'default'
 
 COMMANDS:
   up       Start Pengu container (builds if needed)
@@ -99,11 +138,13 @@ COMMANDS:
   help     Show this help message
 
 EXAMPLES:
-  ./pengu up && ./pengu shell    # Start and enter Pengu
-  ./pengu root                   # Enter as root to install packages
-  ./pengu stop && ./pengu rm     # Clean stop and remove
+  ./pengu up && ./pengu shell            # Default profile
+  ./pengu up java && ./pengu shell java  # Named profile
+  ./pengu root                           # Enter as root
+  ./pengu stop && ./pengu rm             # Clean stop and remove
 
 PROJECT: $PROJECT
+PROFILE: $PROFILE
 ENGINE:  $ENG
 
 For more info: https://github.com/soyrochus/pengu
@@ -111,7 +152,11 @@ EOF
 }
 
 build() {
+  local pengufile
+  pengufile="$(resolve_pengufile "$PROFILE")"
+
   $ENG build -t "$IMAGE" \
+    -f "$pengufile" \
     --build-arg UID="$(uid)" \
     --build-arg GID="$(gid)" \
     --build-arg USERNAME=pengu \
@@ -133,10 +178,10 @@ create_if_needed() {
     "$IMAGE" tail -f /dev/null >/dev/null
 }
 
-case "${1:-}" in
-  up)      build; create_if_needed; $ENG start "$CONTAINER"; echo "Pengu up → ./pengu shell" ;;
-  shell)   $ENG exec -it "$CONTAINER" bash || { "$0" up; $ENG exec -it "$CONTAINER" bash; } ;;
-  root)    $ENG exec -it --user 0 "$CONTAINER" bash || { "$0" up; $ENG exec -it --user 0 "$CONTAINER" bash; } ;;
+case "$CMD" in
+  up)      build; create_if_needed; $ENG start "$CONTAINER"; echo "Pengu up → ./pengu shell $PROFILE" ;;
+  shell)   $ENG exec -it "$CONTAINER" bash || { "$0" up "$PROFILE"; $ENG exec -it "$CONTAINER" bash; } ;;
+  root)    $ENG exec -it --user 0 "$CONTAINER" bash || { "$0" up "$PROFILE"; $ENG exec -it --user 0 "$CONTAINER" bash; } ;;
   stop)    stop_container ;;
   rm)      remove_container ;;
   rebuild) remove_container; build; create_if_needed; $ENG start "$CONTAINER" ;;
@@ -144,11 +189,11 @@ case "${1:-}" in
   nuke)    stop_container; remove_container; remove_volumes ;;
   help|--help|-h) show_help ;;
   "")
-    echo "Usage: ./pengu {up|shell|root|stop|rm|rebuild|commit|nuke|help}"
+    echo "Usage: ./pengu {up|shell|root|stop|rm|rebuild|commit|nuke|help} [PROFILE]"
     echo "Try './pengu help' for more information."
     ;;
   *)
-    echo "Error: Unknown command '$1'"
+    echo "Error: Unknown command '$CMD'"
     echo "Try './pengu help' for available commands."
     exit 1
     ;;

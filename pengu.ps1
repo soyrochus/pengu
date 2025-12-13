@@ -3,9 +3,11 @@
 # https://github.com/soyrochus/pengu
 
 Param(
-  [Parameter(Mandatory=$false)]
+  [Parameter(Mandatory=$false, Position=0)]
   [ValidateSet("up","shell","root","stop","rm","rebuild","commit","nuke","help")]
-  [string]$Cmd = ""
+  [string]$Cmd = "",
+  [Parameter(Mandatory=$false, Position=1)]
+  [string]$Profile = "default"
 )
 
 function Get-Engine {
@@ -16,14 +18,37 @@ function Get-Engine {
 
 $ENG = Get-Engine
 $Project = if ($env:PROJECT_NAME) { $env:PROJECT_NAME } else { Split-Path -Leaf (Get-Location) }
-$Image = "pengu:$Project"
-$Container = "$Project-pengu"
-$HomeVol = "$Project-pengu-home"
-$AptVol = "$Project-pengu-apt"
-$ListsVol = "$Project-pengu-lists"
+$Image = "pengu:$Project-$Profile"
+$Container = "$Project-pengu-$Profile"
+$HomeVol = "$Project-pengu-$Profile-home"
+$AptVol = "$Project-pengu-$Profile-apt"
+$ListsVol = "$Project-pengu-$Profile-lists"
 $Uid = if ($env:PENGU_UID) { [int]$env:PENGU_UID } else { 1000 }
 $Gid = if ($env:PENGU_GID) { [int]$env:PENGU_GID } else { 1000 }
 $SelinuxSuffix = if ($ENG -eq "podman") { ":Z" } else { "" }
+
+function Resolve-PenguFile {
+  param([string]$Name)
+
+  $base = ".pengu"
+  if ($Name -eq "default") {
+    $path = Join-Path $base "Pengufile"
+    if (Test-Path $path -PathType Leaf) { return $path }
+
+    if (Test-Path "Dockerfile" -PathType Leaf) {
+      Write-Warning "Using Dockerfile is deprecated."
+      Write-Warning "Please migrate to .pengu/Pengufile."
+      return "Dockerfile"
+    }
+  }
+  else {
+    $path = Join-Path $base ("Pengufile.{0}" -f $Name)
+    if (Test-Path $path -PathType Leaf) { return $path }
+  }
+
+  $expected = if ($Name -eq "default") { "$base/Pengufile" } else { "$base/Pengufile.$Name" }
+  throw "Pengufile for profile '$Name' not found. Expected $expected"
+}
 
 function Test-ContainerExists {
   param([string]$Name)
@@ -72,7 +97,8 @@ function Show-Help {
 Pengu - Your persistent Linux buddy
 
 USAGE:
-  .\pengu.ps1 [COMMAND]
+  .\pengu.ps1 COMMAND [PROFILE]
+  # PROFILE defaults to 'default'
 
 COMMANDS:
   up       Start Pengu container (builds if needed)
@@ -112,11 +138,13 @@ COMMANDS:
   help     Show this help message
 
 EXAMPLES:
-  .\pengu.ps1 up; .\pengu.ps1 shell    # Start and enter Pengu
-  .\pengu.ps1 root                     # Enter as root to install packages
-  .\pengu.ps1 stop; .\pengu.ps1 rm     # Clean stop and remove
+  .\pengu.ps1 up; .\pengu.ps1 shell            # Default profile
+  .\pengu.ps1 up java; .\pengu.ps1 shell java  # Named profile
+  .\pengu.ps1 root                             # Enter as root
+  .\pengu.ps1 stop; .\pengu.ps1 rm             # Clean stop and remove
 
 PROJECT: $Project
+PROFILE: $Profile
 ENGINE:  $ENG
 
 For more info: https://github.com/soyrochus/pengu
@@ -124,7 +152,8 @@ For more info: https://github.com/soyrochus/pengu
 }
 
 function Build {
-  & $ENG build -t $Image --build-arg UID=$Uid --build-arg GID=$Gid --build-arg USERNAME=pengu .
+  $pengufile = Resolve-PenguFile -Name $Profile
+  & $ENG build -t $Image -f $pengufile --build-arg UID=$Uid --build-arg GID=$Gid --build-arg USERNAME=pengu .
 }
 function CreateIfNeeded {
   if (-not (Test-ContainerExists -Name $Container)) {
@@ -138,15 +167,15 @@ function CreateIfNeeded {
 }
 
 if (-not $Cmd) {
-  Write-Host "Usage: .\pengu.ps1 {up|shell|root|stop|rm|rebuild|commit|nuke}"
+  Write-Host "Usage: .\pengu.ps1 {up|shell|root|stop|rm|rebuild|commit|nuke|help} [PROFILE]"
   Write-Host "Try '.\pengu.ps1 help' for more information."
   exit 1
 }
 
 switch ($Cmd) {
-  "up"      { Build; CreateIfNeeded; & $ENG start $Container; Write-Host "Pengu up → .\pengu.ps1 shell" }
-  "shell"   { & $ENG exec -it $Container bash; if ($LASTEXITCODE -ne 0) { & $PSCommandPath up; & $ENG exec -it $Container bash } }
-  "root"    { & $ENG exec -it --user 0 $Container bash; if ($LASTEXITCODE -ne 0) { & $PSCommandPath up; & $ENG exec -it --user 0 $Container bash } }
+  "up"      { Build; CreateIfNeeded; & $ENG start $Container; Write-Host "Pengu up → .\pengu.ps1 shell $Profile" }
+  "shell"   { & $ENG exec -it $Container bash; if ($LASTEXITCODE -ne 0) { & $PSCommandPath up $Profile; & $ENG exec -it $Container bash } }
+  "root"    { & $ENG exec -it --user 0 $Container bash; if ($LASTEXITCODE -ne 0) { & $PSCommandPath up $Profile; & $ENG exec -it --user 0 $Container bash } }
   "stop"    { Stop-Container }
   "rm"      { Remove-Container }
   "rebuild" { Remove-Container; Build; CreateIfNeeded; & $ENG start $Container }
