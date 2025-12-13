@@ -206,6 +206,19 @@ Pengu supports multiple **profiles** per project. Each profile is a separate bui
 ./pengu profile install <name>    # Download a profile (e.g., 'rust')
 ```
 
+**Available profiles:**
+
+- **default** — General-purpose development environment with build-essentials (C/C++ development), git, vim, Python 3, pip, and uv
+- **nodejs** — Node.js and npm for JavaScript/TypeScript development
+- **rust** — Rust toolchain for Rust development
+
+Install any profile with:
+```bash
+./pengu profile install nodejs    # Downloads Pengufile.nodejs
+./pengu profile install rust      # Downloads Pengufile.rust
+./pengu shell nodejs              # Use the nodejs profile
+```
+
 Each profile has its own container instance and persistent volumes — no interference between profiles.
 
 ### Platform differences

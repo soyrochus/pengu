@@ -11,11 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
     curl wget git vim less unzip zip build-essential \
     python3 python3-pip \
-    nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (fast Python package manager)
-RUN pip install --no-cache-dir uv
 
 # Create non-root user matching host UID/GID (avoids root-owned files on bind mounts)
 RUN set -eux; \
@@ -50,6 +47,10 @@ RUN set -eux; \
 WORKDIR /workspace
 RUN chown -R ${UID}:${GID} /workspace
 USER ${USERNAME}
+
+# Switch to pengu before installing uv
+ENV HOME=/home/${USERNAME}
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ENV PATH="/home/${USERNAME}/.local/bin:${PATH}"
 
