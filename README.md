@@ -126,7 +126,7 @@ exit
 - **`./pengu shell`** - Your daily driver. Opens as regular user `pengu`
 - **`./pengu root`** - When you need system privileges (installing packages with `apt`)
 - **`./pengu stop`** - Pause Pengu when not needed (saves resources)
-- **`./pengu rebuild`** - Start fresh but keep your data (useful after Dockerfile changes)
+- **`./pengu rebuild`** - Start fresh but keep your data (useful after Pengufile changes)
 - **`./pengu commit`** - Save current state as a new base image (for custom setups)
 - **`./pengu nuke`** - Complete reset when you want to start over
 
@@ -172,7 +172,7 @@ exit
 | `./pengu root`    | Enter as root                      | All            |
 | `./pengu stop`    | Stop container                     | All            |
 | `./pengu rm`      | Remove container (keep data)       | All volumes    |
-| `./pengu rebuild` | Rebuild from Dockerfile            | All volumes    |
+| `./pengu rebuild` | Rebuild from Pengufile             | All volumes    |
 | `./pengu commit`  | Save current state into image      | All            |
 | `./pengu nuke`    | Delete container **and** volumes   | Nothing        |
 | `./pengu help`    | Show detailed help                 | -              |
@@ -262,7 +262,7 @@ Volume: ${PROJECT}-pengu-lists → Container: /var/lib/apt/lists
 ```mermaid
 graph TD
     A[./pengu up] --> B{Image exists?}
-    B -->|No| C[Build from Dockerfile]
+    B -->|No| C[Build from Pengufile]
     B -->|Yes| D{Container exists?}
     C --> D
     D -->|No| E[Create container with volumes]
@@ -296,7 +296,7 @@ Each project gets isolated storage:
 
 ```text
 myproject/
-├── Dockerfile           # Container definition
+├── .pengu/Pengufile     # Container definition
 ├── pengu               # Bash script
 ├── pengu.ps1           # PowerShell script  
 └── your-project-files/
@@ -321,7 +321,7 @@ Docker volumes:
 
 - **Container restart** (`./pengu stop` → `./pengu up`): Everything
 - **Container rebuild** (`./pengu rebuild`): All volumes, fresh container
-- **Image rebuild** (modify Dockerfile → `./pengu rebuild`): All volumes
+- **Image rebuild** (modify Pengufile → `./pengu rebuild`): All volumes
 - **System reboot**: Everything (volumes are persistent)
 - **Pengu nuke** (`./pengu nuke`): Nothing (complete reset)
 
@@ -345,14 +345,14 @@ This design keeps your environments clean, isolated, and disposable.
 **Linux/macOS:**
 
 ```bash
-rm -f Dockerfile pengu pengu.sh pengu.ps1
+rm -rf .pengu pengu pengu.sh pengu.ps1
 podman volume rm -f "$(basename "$PWD")-pengu-home" || true
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-Remove-Item -Force -ErrorAction SilentlyContinue Dockerfile, pengu, pengu.sh, pengu.ps1
+Remove-Item -Force -ErrorAction SilentlyContinue -Recurse .pengu, pengu, pengu.sh, pengu.ps1
 podman volume rm -f "$((Get-Item .).Name)-pengu-home"
 ```
 
@@ -404,14 +404,14 @@ This design keeps your environments clean, isolated, and disposable.
 **Linux/macOS:**
 
 ```bash
-rm -f Dockerfile pengu pengu.sh pengu.ps1
+rm -rf .pengu pengu pengu.sh pengu.ps1
 podman volume rm -f "$(basename "$PWD")-pengu-home" || true
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-Remove-Item -Force -ErrorAction SilentlyContinue Dockerfile, pengu, pengu.sh, pengu.ps1
+Remove-Item -Force -ErrorAction SilentlyContinue -Recurse .pengu, pengu, pengu.sh, pengu.ps1
 podman volume rm -f "$((Get-Item .).Name)-pengu-home"
 ```
 
@@ -464,11 +464,13 @@ export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
    ```bash
    ./pengu up
    ```
+
 2. Open VS Code
 3. Open the Command Palette:
 
    * macOS: `Cmd + Shift + P`
    * Linux / Windows: `Ctrl + Shift + P`
+   
 4. Run:
 
    ```
@@ -543,7 +545,7 @@ Your project files are available at `/workspace` with all dependencies pre-confi
 This repo (`soyrochus/pengu`) contains:
 
 ```text
-Dockerfile         # Base Ubuntu + banner
+.pengu/Pengufile   # Default container definition (Dockerfile syntax)
 pengu              # Bash helper script (symlinked to pengu.sh)
 pengu.sh           # Bash helper script installed in projects  
 pengu.ps1          # PowerShell helper script for Windows
