@@ -329,7 +329,7 @@ export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 
    ```
    myproject-pengu-default
-   myproject-pengu-java25
+   myproject-pengu-nodejs
    myproject-pengu-rust
    ```
 
