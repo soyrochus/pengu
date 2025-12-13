@@ -4,7 +4,7 @@
 
 Param(
   [Parameter(Mandatory=$false, Position=0)]
-  [ValidateSet("up","shell","root","stop","rm","rebuild","commit","nuke","help")]
+  [ValidateSet("up","shell","root","stop","rm","rebuild","commit","nuke","profile","help")]
   [string]$Cmd = "",
   [Parameter(Mandatory=$false, Position=1)]
   [string]$Profile = "default"
@@ -135,6 +135,11 @@ COMMANDS:
            - ⚠️  DESTRUCTIVE: Removes everything permanently
            - Deletes container and all persistent volumes
 
+  profile list       List local profiles (.pengu/Pengufile.*)
+  profile available  Show available profiles from repository
+  profile install    Download and install a profile
+                     Usage: .\pengu.ps1 profile install <name>
+
   help     Show this help message
 
 EXAMPLES:
@@ -142,6 +147,8 @@ EXAMPLES:
   .\pengu.ps1 up java; .\pengu.ps1 shell java  # Named profile
   .\pengu.ps1 root                             # Enter as root
   .\pengu.ps1 stop; .\pengu.ps1 rm             # Clean stop and remove
+  .\pengu.ps1 profile available                # See available profiles
+  .\pengu.ps1 profile install rust             # Install Rust profile
 
 PROJECT: $Project
 PROFILE: $Profile
@@ -166,8 +173,76 @@ function CreateIfNeeded {
   }
 }
 
+function ProfileList {
+  $base = ".pengu"
+  $found = $false
+  
+  if (Test-Path (Join-Path $base "Pengufile") -PathType Leaf) {
+    Write-Host "📄 default ($(Join-Path $base 'Pengufile'))"
+    $found = $true
+  }
+  
+  Get-ChildItem -Path $base -Filter "Pengufile.*" -ErrorAction SilentlyContinue | ForEach-Object {
+    $name = $_.Name -replace "^Pengufile\.", ""
+    Write-Host "📄 $name ($_)"
+    $found = $true
+  }
+  
+  if (-not $found) {
+    Write-Host "No profiles found. Use 'pengu profile install <name>' to download one."
+  }
+}
+
+function ProfileAvailable {
+  Write-Host "Fetching available profiles..."
+  $url = "https://raw.githubusercontent.com/soyrochus/pengu/main/profiles/profiles.txt"
+  
+  try {
+    $profiles = Invoke-WebRequest -UseBasicParsing -Uri $url -ErrorAction Stop
+    Write-Host $profiles.Content
+  } catch {
+    Write-Host "Error: Failed to fetch profiles from server."
+    Write-Host $_.Exception.Message
+    exit 1
+  }
+}
+
+function ProfileInstall {
+  param([string]$Name)
+  
+  if ([string]::IsNullOrWhiteSpace($Name)) {
+    Write-Host "Usage: .\pengu.ps1 profile install <name>"
+    Write-Host "Example: .\pengu.ps1 profile install rust"
+    exit 1
+  }
+  
+  $dst = Join-Path ".pengu" "Pengufile.$Name"
+  
+  if (Test-Path $dst -PathType Leaf) {
+    $ans = Read-Host "Profile '$Name' already exists. Overwrite? [y/N]"
+    if ($ans -notmatch "^(y|Y|yes)$") {
+      Write-Host "Cancelled."
+      return
+    }
+  }
+  
+  Write-Host "Installing profile '$Name'..."
+  $url = "https://raw.githubusercontent.com/soyrochus/pengu/main/profiles/$Name/Dockerfile"
+  
+  New-Item -ItemType Directory -Force -Path ".pengu" | Out-Null
+  
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $dst -ErrorAction Stop
+    Write-Host "✓ Profile '$Name' installed to $dst"
+  } catch {
+    if (Test-Path $dst) { Remove-Item $dst -Force }
+    Write-Host "Error: Profile '$Name' not found on server or download failed."
+    exit 1
+  }
+}
+
 if (-not $Cmd) {
-  Write-Host "Usage: .\pengu.ps1 {up|shell|root|stop|rm|rebuild|commit|nuke|help} [PROFILE]"
+  Write-Host "Usage: .\pengu.ps1 {up|shell|root|stop|rm|rebuild|commit|nuke|profile|help} [PROFILE]"
   Write-Host "Try '.\pengu.ps1 help' for more information."
   exit 1
 }
@@ -181,6 +256,14 @@ switch ($Cmd) {
   "rebuild" { Remove-Container; Build; CreateIfNeeded; & $ENG start $Container }
   "commit"  { & $ENG commit $Container $Image | Out-Null; Write-Host "Committed → $Image" }
   "nuke"    { Stop-Container; Remove-Container; Remove-Volumes }
+  "profile" {
+    switch ($Profile) {
+      "list"      { ProfileList }
+      "available" { ProfileAvailable }
+      "install"   { ProfileInstall -Name @($args)[1] }
+      default     { Write-Host "Usage: .\pengu.ps1 profile {list|available|install <name>}" }
+    }
+  }
   "help"    { Show-Help }
   default   { 
     Write-Host "Error: Unknown command '$Cmd'" -ForegroundColor Red

@@ -1,22 +1,20 @@
 # syntax=docker/dockerfile:1
-ARG RUST_BASE_IMAGE=rust:bookworm
-FROM ${RUST_BASE_IMAGE}
+FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG USERNAME=pengu
 ARG UID=1000
 ARG GID=1000
 
-# Base tools (keep consistent with default; add common Rust-native deps)
+# Base tools + ImageMagick + Python + Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
     curl wget git vim less unzip zip build-essential \
     python3 python3-pip \
-    ca-certificates \
-    libssl-dev \
+    nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user matching host UID/GID (same as your default)
+# Create non-root user matching host UID/GID (avoids root-owned files on bind mounts)
 RUN set -eux; \
     if getent passwd "${UID}" >/dev/null; then \
       existing_user="$(getent passwd "${UID}" | cut -d: -f1)"; \
@@ -54,10 +52,7 @@ USER ${USERNAME}
 ENV HOME=/home/${USERNAME}
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Rust official image already provides rustup/cargo; ensure user sees cargo bins if needed
-ENV PATH="/home/${USERNAME}/.cargo/bin:/home/${USERNAME}/.local/bin:${PATH}"
+ENV PATH="/home/${USERNAME}/.local/bin:${PATH}"
 
-# Keep Rust build artifacts out of /workspace to avoid host bind-mount permission quirks
-ENV CARGO_TARGET_DIR="/home/${USERNAME}/.cargo/target"
-
+# Default: do nothing until you exec/shell in
 CMD ["bash"]

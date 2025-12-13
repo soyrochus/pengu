@@ -6,12 +6,16 @@ ARG USERNAME=pengu
 ARG UID=1000
 ARG GID=1000
 
-# Base tools + ImageMagick
+# Base tools + ImageMagick + Python + Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
     curl wget git vim less unzip zip build-essential \
     python3 python3-pip \
+    nodejs npm \
     && rm -rf /var/lib/apt/lists/*
+
+# Install uv (fast Python package manager)
+RUN pip install --no-cache-dir uv
 
 # Create non-root user matching host UID/GID (avoids root-owned files on bind mounts)
 RUN set -eux; \

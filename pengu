@@ -135,6 +135,11 @@ COMMANDS:
            - ⚠️  DESTRUCTIVE: Removes everything permanently
            - Deletes container and all persistent volumes
 
+  profile list       List local profiles (.pengu/Pengufile.*)
+  profile available  Show available profiles from repository
+  profile install    Download and install a profile
+                     Usage: ./pengu profile install <name>
+
   help     Show this help message
 
 EXAMPLES:
@@ -142,6 +147,8 @@ EXAMPLES:
   ./pengu up java && ./pengu shell java  # Named profile
   ./pengu root                           # Enter as root
   ./pengu stop && ./pengu rm             # Clean stop and remove
+  ./pengu profile available              # See available profiles
+  ./pengu profile install rust           # Install Rust profile
 
 PROJECT: $PROJECT
 PROFILE: $PROFILE
@@ -178,6 +185,85 @@ create_if_needed() {
     "$IMAGE" tail -f /dev/null >/dev/null
 }
 
+profile_list() {
+  local base=".pengu"
+  local found=0
+  
+  if [ -f "${base}/Pengufile" ]; then
+    echo "📄 default (${base}/Pengufile)"
+    found=1
+  fi
+  
+  for file in "${base}"/Pengufile.*; do
+    if [ -f "$file" ]; then
+      local name="${file##*.}"
+      echo "📄 $name ($file)"
+      found=1
+    fi
+  done
+  
+  if [ $found -eq 0 ]; then
+    echo "No profiles found. Use 'pengu profile install <name>' to download one."
+  fi
+}
+
+profile_available() {
+  echo "Fetching available profiles..."
+  local url="https://raw.githubusercontent.com/soyrochus/pengu/main/profiles/profiles.txt"
+  
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" || { echo "Failed to fetch profiles from server."; return 1; }
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url" || { echo "Failed to fetch profiles from server."; return 1; }
+  else
+    echo "Error: Neither curl nor wget found. Cannot fetch profiles."
+    return 1
+  fi
+}
+
+profile_install() {
+  local name="$1"
+  if [ -z "$name" ]; then
+    echo "Usage: ./pengu profile install <name>"
+    echo "Example: ./pengu profile install rust"
+    return 1
+  fi
+  
+  local dst=".pengu/Pengufile.${name}"
+  
+  if [ -f "$dst" ]; then
+    read -rp "Profile '$name' already exists. Overwrite? [y/N] " ans
+    if [[ ! "$ans" =~ ^([yY]|yes)$ ]]; then
+      echo "Cancelled."
+      return 0
+    fi
+  fi
+  
+  echo "Installing profile '$name'..."
+  local url="https://raw.githubusercontent.com/soyrochus/pengu/main/profiles/${name}/Dockerfile"
+  
+  mkdir -p ".pengu"
+  
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$dst" || {
+      rm -f "$dst"
+      echo "Error: Profile '$name' not found on server or download failed."
+      return 1
+    }
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$dst" "$url" || {
+      rm -f "$dst"
+      echo "Error: Profile '$name' not found on server or download failed."
+      return 1
+    }
+  else
+    echo "Error: Neither curl nor wget found. Cannot install profile."
+    return 1
+  fi
+  
+  echo "✓ Profile '$name' installed to $dst"
+}
+
 case "$CMD" in
   up)      build; create_if_needed; $ENG start "$CONTAINER"; echo "Pengu up → ./pengu shell $PROFILE" ;;
   shell)   $ENG exec -it "$CONTAINER" bash || { "$0" up "$PROFILE"; $ENG exec -it "$CONTAINER" bash; } ;;
@@ -187,9 +273,17 @@ case "$CMD" in
   rebuild) remove_container; build; create_if_needed; $ENG start "$CONTAINER" ;;
   commit)  $ENG commit "$CONTAINER" "$IMAGE"; echo "Committed → $IMAGE" ;;
   nuke)    stop_container; remove_container; remove_volumes ;;
+  profile)
+    case "${2:-}" in
+      list)      profile_list ;;
+      available) profile_available ;;
+      install)   profile_install "${3:-}" ;;
+      *)         echo "Usage: ./pengu profile {list|available|install <name>}" ;;
+    esac
+    ;;
   help|--help|-h) show_help ;;
   "")
-    echo "Usage: ./pengu {up|shell|root|stop|rm|rebuild|commit|nuke|help} [PROFILE]"
+    echo "Usage: ./pengu {up|shell|root|stop|rm|rebuild|commit|nuke|profile|help} [PROFILE]"
     echo "Try './pengu help' for more information."
     ;;
   *)

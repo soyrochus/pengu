@@ -165,222 +165,76 @@ exit
 
 ### Command reference
 
-| Command           | Description                        | Data preserved |
-| ----------------- | ---------------------------------- | -------------- |
-| `./pengu up`      | Build and start Pengu              | All            |
-| `./pengu shell`   | Enter Ubuntu shell as user `pengu` | All            |
-| `./pengu root`    | Enter as root                      | All            |
-| `./pengu stop`    | Stop container                     | All            |
-| `./pengu rm`      | Remove container (keep data)       | All volumes    |
-| `./pengu rebuild` | Rebuild from Pengufile             | All volumes    |
-| `./pengu commit`  | Save current state into image      | All            |
-| `./pengu nuke`    | Delete container **and** volumes   | Nothing        |
-| `./pengu help`    | Show detailed help                 | -              |
+| Command                     | Description                        | Data preserved |
+| --------------------------- | ---------------------------------- | -------------- |
+| `./pengu up` [PROFILE]      | Build and start Pengu              | All            |
+| `./pengu shell` [PROFILE]   | Enter Ubuntu shell as user `pengu` | All            |
+| `./pengu root` [PROFILE]    | Enter as root                      | All            |
+| `./pengu stop`              | Stop container                     | All            |
+| `./pengu rm`                | Remove container (keep data)       | All volumes    |
+| `./pengu rebuild` [PROFILE] | Rebuild from Pengufile             | All volumes    |
+| `./pengu commit` [PROFILE]  | Save current state into image      | All            |
+| `./pengu nuke`              | Delete container **and** volumes   | Nothing        |
+| `./pengu profile list`      | List local profiles                | -              |
+| `./pengu profile available` | Show available profiles            | -              |
+| `./pengu profile install`   | Download profile from repository   | -              |
+| `./pengu help`              | Show detailed help                 | -              |
+
+### Profiles
+
+Pengu supports multiple **profiles** per project. Each profile is a separate build configuration:
+
+**Default profile:**
+```bash
+./pengu up              # Uses .pengu/Pengufile
+./pengu shell           # Default profile
+```
+
+**Named profiles:**
+```bash
+./pengu up rust         # Uses .pengu/Pengufile.rust
+./pengu shell rust      # Enter rust profile container
+
+./pengu up python-ml    # Uses .pengu/Pengufile.python-ml
+./pengu shell python-ml
+```
+
+**Manage profiles:**
+```bash
+./pengu profile list              # Show your local profiles
+./pengu profile available         # Show profiles available from repository
+./pengu profile install <name>    # Download a profile (e.g., 'rust')
+```
+
+Each profile has its own container instance and persistent volumes — no interference between profiles.
 
 ### Platform differences
 
 **Linux/macOS:**
-
 - Uses `./pengu` (bash script)
 - SELinux labels applied automatically on Podman
 - File permissions match your host user
 
 **Windows:**
-
 - Uses `.\pengu.ps1` (PowerShell script)
 - Also installs `pengu` bash script for compatibility
-- Fixed UID/GID (1000:1000) for simplicity
+- Fixed UID/GID (1000:1000) for consistency
 
 ---
 
-## 🔧 Under the hood
+## 🏗️ Technical Details
 
-### Container architecture
+For in-depth information about Pengu's container architecture, volume strategy, security model, and performance characteristics, see [TECHSPEC.md](TECHSPEC.md).
 
-Pengu creates a lightweight Ubuntu 24.04 container with these characteristics:
-
-- **Base image**: `ubuntu:24.04` with essential tools pre-installed
-- **User setup**: Creates a `pengu` user matching your host UID/GID (Linux/macOS)
-- **Working directory**: `/workspace` (your project folder)
-- **Default command**: `tail -f /dev/null` (keeps container running)
-
-### Volume strategy
-
-Pengu uses a 4-volume strategy for optimal performance and persistence (per profile, e.g. `<project>-pengu-default-home`):
-
-#### 1. **Project workspace** (bind mount)
-
-```text
-Host: $PWD → Container: /workspace
-```
-
-- **Purpose**: Direct access to your project files
-- **Behavior**: Real-time sync between host and container
-- **Persistence**: Lives on your host filesystem
-- **Performance**: Native filesystem speed
-
-#### 2. **User home directory** (named volume)
-
-```text
-Volume: ${PROJECT}-pengu-home → Container: /home/pengu
-```
-
-- **Purpose**: Personal Linux environment
-- **Contains**:
-  - Dotfiles (`.bashrc`, `.vimrc`, `.gitconfig`)
-  - Shell history and personal settings
-  - Python packages (`pip install --user`)
-  - SSH keys and credentials
-  - Any files created in user's home
-- **Persistence**: Survives container rebuilds
-- **Isolation**: Separate per project
-
-#### 3. **APT package cache** (named volume)
-
-```text
-Volume: ${PROJECT}-pengu-apt → Container: /var/cache/apt
-```
-
-- **Purpose**: Downloaded `.deb` package files
-- **Benefit**: Dramatically speeds up repeated `apt install` commands
-- **Behavior**: Packages downloaded once, reused forever
-- **Size impact**: Can grow large but saves bandwidth
-
-#### 4. **APT metadata cache** (named volume)
-
-```text
-Volume: ${PROJECT}-pengu-lists → Container: /var/lib/apt/lists
-```
-
-- **Purpose**: Package repository indexes and metadata
-- **Benefit**: Faster `apt update` operations
-- **Behavior**: Avoids re-downloading package lists
-- **Updates**: Refreshed when you run `apt update`
-
-### Container lifecycle
-
-```mermaid
-graph TD
-    A[./pengu up] --> B{Image exists?}
-    B -->|No| C[Build from Pengufile]
-    B -->|Yes| D{Container exists?}
-    C --> D
-    D -->|No| E[Create container with volumes]
-    D -->|Yes| F[Start existing container]
-    E --> F
-    F --> G[Container running]
-    
-    G --> H[./pengu shell/root]
-    G --> I[./pengu stop]
-    G --> J[./pengu rm]
-    G --> K[./pengu nuke]
-    
-    I --> L[Container stopped]
-    J --> M[Container deleted, volumes kept]
-    K --> N[Everything deleted]
-    
-    L --> F
-    M --> D
-```
-
-### Security model
-
-- **User mapping**: Container user matches host user (prevents permission issues)
-- **SELinux**: Automatic `:Z` labels on Podman for proper file access
-- **Network**: Container has network access but no exposed ports by default
-- **Filesystem**: Only your project directory is accessible to container
-
-### Storage efficiency
-
-Each project gets isolated storage:
-
-```text
-myproject/
-├── .pengu/Pengufile     # Container definition
-├── pengu               # Bash script
-├── pengu.ps1           # PowerShell script  
-└── your-project-files/
-
-Docker volumes:
-├── myproject-pengu-home    # User home (~50-200MB typical)
-├── myproject-pengu-apt     # Package cache (~100-500MB)
-└── myproject-pengu-lists   # Metadata (~10-50MB)
-```
-
-### Performance characteristics
-
-- **Startup time**: ~1-3 seconds for existing containers
-- **Build time**: ~30-60 seconds for first `./pengu up`
-- **Package installs**: 2-5x faster after first install (due to caching)
-- **File operations**: Native speed (bind mounts)
-- **Memory usage**: ~50-100MB base + your applications
-
-### What persists between operations
-
-**What survives what:**
-
-- **Container restart** (`./pengu stop` → `./pengu up`): Everything
-- **Container rebuild** (`./pengu rebuild`): All volumes, fresh container
-- **Image rebuild** (modify Pengufile → `./pengu rebuild`): All volumes
-- **System reboot**: Everything (volumes are persistent)
-- **Pengu nuke** (`./pengu nuke`): Nothing (complete reset)
-
-### Project isolation benefits
-
-**Benefits:**
-
-- **No dependency conflicts** between projects
-- **Experiment freely** without affecting other projects  
-- **Quick cleanup** with `./pengu nuke`
-- **Reproducible environments** for team members
-
-Each project gets its own Pengu container and volumes, automatically named after the folder (e.g. `myapp-pengu`).
-This design keeps your environments clean, isolated, and disposable.
-
-> Want a fresh start?
-> Run `./pengu nuke` — all gone, instantly.
-
-### Removing Pengu from a project
-
-**Linux/macOS:**
-
-```bash
-rm -rf .pengu pengu pengu.sh pengu.ps1
-podman volume rm -f "$(basename "$PWD")-pengu-home" || true
-```
-
-**Windows (PowerShell):**
-
-```powershell
-Remove-Item -Force -ErrorAction SilentlyContinue -Recurse .pengu, pengu, pengu.sh, pengu.ps1
-podman volume rm -f "$((Get-Item .).Name)-pengu-home"
-```
+Key topics covered:
+- Container architecture and lifecycle
+- 4-volume storage strategy
+- Security model and isolation
+- Performance characteristics
+- Advanced multi-profile architecture
+- Troubleshooting guide
 
 ---
-
-## 🧩 For teams and templates
-
----
-
-## 💾 What persists
-
-| Location                               | Purpose                                   | Persists between runs |
-| -------------------------------------- | ----------------------------------------- | --------------------- |
-| `/workspace`                           | Your local project folder                 | ✅ (on your host)      |
-| `/home/pengu`                          | Pengu user’s home (pip, caches, dotfiles) | ✅ (named volume)      |
-| `/var/cache/apt`, `/var/lib/apt/lists` | apt caches                                | ✅ (named volumes)     |
-
-Anything installed inside Pengu (via `sudo apt install` or `pip install`) will stay available for that project.
-
----
-
-## 🧱 One Pengu per project (by design)
-
-Each project gets its own Pengu container and volumes, automatically named after the folder (e.g. `myapp-pengu`).
-This design keeps your environments clean, isolated, and disposable.
-
-> Want a fresh start?
-> Run `./pengu nuke` — all gone, instantly.
 
 ---
 
@@ -396,24 +250,6 @@ This design keeps your environments clean, isolated, and disposable.
 | `./pengu rebuild` | Rebuild from Dockerfile            |
 | `./pengu commit`  | Save current state into image      |
 | `./pengu nuke`    | Delete container **and** volumes   |
-
----
-
-## 🧯 Remove Pengu from a project
-
-**Linux/macOS:**
-
-```bash
-rm -rf .pengu pengu pengu.sh pengu.ps1
-podman volume rm -f "$(basename "$PWD")-pengu-home" || true
-```
-
-**Windows (PowerShell):**
-
-```powershell
-Remove-Item -Force -ErrorAction SilentlyContinue -Recurse .pengu, pengu, pengu.sh, pengu.ps1
-podman volume rm -f "$((Get-Item .).Name)-pengu-home"
-```
 
 ---
 
@@ -470,7 +306,7 @@ export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 
    * macOS: `Cmd + Shift + P`
    * Linux / Windows: `Ctrl + Shift + P`
-   
+
 4. Run:
 
    ```
