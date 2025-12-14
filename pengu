@@ -171,17 +171,22 @@ build() {
 }
 
 create_if_needed() {
-  local selinux_suffix=""
+  local workspace_opts=""
+  local volume_opts=""
+
   if [ "$ENG" = "podman" ]; then
-    selinux_suffix=":Z"
+    # Workspace bind mount needs :U to be writable under userns mapping.
+    # On Linux with SELinux, keep :Z as well. On macOS, :Z is unnecessary but usually harmless.
+    workspace_opts=":Z,U"
+    volume_opts=":Z"
   fi
 
   container_exists || \
   $ENG create --name "$CONTAINER" \
-    -v "$PWD:/workspace${selinux_suffix}" \
-    -v "$HOMEVOL:/home/pengu${selinux_suffix}" \
-    -v "$APTVOL:/var/cache/apt${selinux_suffix}" \
-    -v "$LISTSVOL:/var/lib/apt/lists${selinux_suffix}" \
+    -v "$PWD:/workspace${workspace_opts}" \
+    -v "$HOMEVOL:/home/pengu${volume_opts}" \
+    -v "$APTVOL:/var/cache/apt${volume_opts}" \
+    -v "$LISTSVOL:/var/lib/apt/lists${volume_opts}" \
     "$IMAGE" tail -f /dev/null >/dev/null
 }
 

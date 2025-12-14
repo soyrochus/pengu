@@ -19,8 +19,6 @@ Anything you install or configure inside Pengu persists across sessions, restart
 > 🧩 One project → one Pengu container **per profile**  
 > Persistent. Portable. Zero configuration.
 
-
-
 ## 🚀 What Pengu does
 
 - Runs **Ubuntu 24.04** in a container (Podman or Docker)
@@ -32,8 +30,6 @@ Anything you install or configure inside Pengu persists across sessions, restart
 
 In short:  
 > Pengu gives you a clean, repeatable Linux workstation for every project.
-
-
 
 ## 🧩 Why Pengu
 
@@ -65,7 +61,7 @@ iwr -useb https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.p
 
 Pengu installs into a `.pengu/` folder:
 
-```
+```text
 .pengu/
 ├── Pengufile            # default build definition
 ├── Pengufile.<profile>  # optional profiles
@@ -75,9 +71,8 @@ Each Pengufile is a Dockerfile. It is renamed Pengufile not to come into conflic
 
 Installed helper scripts:
 
-* `pengu` (Bash)
-* `pengu.ps1` (PowerShell, Windows)
-
+- `pengu` (Bash)
+- `pengu.ps1` (PowerShell, Windows)
 
 
 ## 🚀 Getting started
@@ -97,8 +92,6 @@ sudo apt install htop
 exit
 ./pengu shell   # everything is still there
 ```
-
-
 
 ## 🧩 Profiles
 
@@ -123,10 +116,10 @@ Pengu supports **multiple isolated profiles per project**.
 
 Each profile:
 
-* uses `.pengu/Pengufile.<profile>`
-* has its **own container**
-* has its **own persistent volumes**
-* never interferes with other profiles
+- uses `.pengu/Pengufile.<profile>`
+- has its **own container**
+- has its **own persistent volumes**
+- never interferes with other profiles
 
 ### Profile management
 
@@ -138,10 +131,9 @@ Each profile:
 
 Available profiles typically include:
 
-* **default** — general-purpose (Python, uv, build tools)
-* **nodejs** — Node.js and npm
-* **rust** — Rust toolchain
-
+- **default** — general-purpose (Python, uv, build tools)
+- **nodejs** — Node.js and npm
+- **rust** — Rust toolchain
 
 ## 🧰 Commands
 
@@ -157,21 +149,19 @@ Available profiles typically include:
 | `./pengu nuke`              | Delete container **and** volumes |
 | `./pengu help`              | Show help                        |
 
-
-
-## 🧩 Using Pengu with Visual Studio Code (recommended)
+## 🧩 Using Pengu with Visual Studio Code 
 
 The recommended workflow is to **attach VS Code to a running Pengu container**.
 
-* VS Code runs natively on the host
-* All tooling (language servers, debuggers, terminals) runs inside Pengu
-* `/workspace` is used as the project root
+- VS Code runs natively on the host
+- All tooling (language servers, debuggers, terminals) runs inside Pengu
+- `/workspace` is used as the project root
 
 ### Requirements
 
-* Visual Studio Code
-* VS Code extension: **Dev Containers**
-* Podman or Docker
+- Visual Studio Code
+- VS Code extension: **Dev Containers**
+- Podman or Docker
 
 ### Podman one-time setup
 
@@ -194,14 +184,16 @@ File | Preferences | Settings).
    ```bash
    ./pengu up
    ```
+
 2. In VS Code:
 
-   ```
+   ```text
    Dev Containers: Attach to Running Container
    ```
+
 3. Select:
 
-   ```
+   ```text
    myproject-pengu-default
    myproject-pengu-rust
    myproject-pengu-nodejs
@@ -209,14 +201,53 @@ File | Preferences | Settings).
 
 VS Code reopens attached to the container automatically.
 
+## 📁 Note on file ownership when using Podman
+
+When Pengu runs on **Podman**, the project directory is mounted into the container with the `:U` mount option.
+This is required so the non-root `pengu` user inside the container can **write to `/workspace`** reliably.
+
+### What this means
+
+- Files created or modified from inside Pengu may appear on the host as owned by a **numeric UID/GID** (for example `100999:100999`).
+- This is expected behavior with Podman user-namespace mapping.
+- Inside the container, permissions are correct and writes work normally.
+- On the host, permissions usually remain usable (`rw-rw-` / `rwxrwx-`), even if ownership looks unusual.
+
+This only affects the **host’s view of ownership**, not file contents or access inside Pengu.
+
+### Why Pengu does this
+
+Without `:U`, Podman often mounts the project directory as **read-only** for non-root users inside the container, leading to errors when:
+
+- saving files,
+- compiling code (e.g. Rust, Cargo),
+- or using editors attached to the container.
+
+Using `:U` trades “clean ownership display” for a **reliable, writable workspace**.
+
+### Recommended practice
+
+- Keep build artifacts out of `/workspace` when possible (e.g. Rust uses `CARGO_TARGET_DIR` in Pengu profiles).
+- Treat Pengu as the authoritative environment for writes during development.
+
+### Resetting ownership on the host
+
+If you want to restore file ownership on the host back to your normal user, run **once on the host**:
+
+```bash
+sudo chown -R <your-user>:<your-group> .
+```
+
+This does not affect Pengu’s data volumes.
+If you continue working with the same Pengu container, ownership may shift again for newly written files — this is normal with Podman.
+
+
 
 ## 🏗️ Technical details
 
 Detailed architecture, volume strategy, security model, performance, and troubleshooting are documented in:
 
 👉 **[TECHSPEC.md](TECHSPEC.md)**
-
-
 
 ## 🧩 For teams and templates
 
@@ -227,8 +258,6 @@ curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.
 ```
 
 No WSL, no VMs, no local toolchain setup required.
-
-
 
 ## 🛠 Maintainers
 
@@ -253,13 +282,9 @@ Release process:
    curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/v24.10.0/pengu-install.sh | bash -s -- -y
    ```
 
-
-
 [![Install Pengu](https://img.shields.io/badge/Install-Pengu-blue?logo=gnu-bash\&style=for-the-badge)](https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh)
 
 **Pengu** — a penguin in your pocket. 🐧
-
-
 
 ## Principles of Participation
 
@@ -268,7 +293,6 @@ Participation is open to all, regardless of background or viewpoint.
 
 This project follows the [FOSS Pluralism Manifesto](./FOSS_PLURALISM_MANIFESTO.md),  
 which affirms respect for people, freedom to critique ideas, and space for diverse perspectives.  
-
 
 ## License and Copyright
 
