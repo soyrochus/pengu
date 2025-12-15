@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG USERNAME=pengu
+ARG UID=1000
+ARG GID=1000
+
+# Base tools + ImageMagick + Python + Java + Maven + Gradle
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl wget gnupg \
+    imagemagick \
+    git vim less unzip zip build-essential \
+    python3 python3-pip python3-venv \
+    openjdk-21-jdk \
+    maven gradle \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user matching host UID/GID
+RUN set -eux; \
+    if getent passwd "${UID}" >/dev/null; then \
+      existing_user="$(getent passwd "${UID}" | cut -d: -f1)"; \
+      if [ "${existing_user}" != "${USERNAME}" ]; then \
+        existing_group="$(id -gn "${existing_user}")"; \
+        usermod -l "${USERNAME}" "${existing_user}"; \
+        if [ "${existing_group}" != "${USERNAME}" ]; then \
+          groupmod -n "${USERNAME}" "${existing_group}"; \
+        fi; \
+      fi; \
+      current_home="$(getent passwd "${USERNAME}" | cut -d: -f6)"; \
+      if [ "${current_home}" != "/home/${USERNAME}" ]; then \
+        usermod -d "/home/${USERNAME}" -m "${USERNAME}"; \
+      fi; \
+    else \
+      if getent group "${GID}" >/dev/null; then \
+        existing_group="$(getent group "${GID}" | cut -d: -f1)"; \
+        if [ "${existing_group}" != "${USERNAME}" ]; then \
+          groupmod -n "${USERNAME}" "${existing_group}"; \
+        fi; \
+      else \
+        groupadd -g "${GID}" "${USERNAME}"; \
+      fi; \
+      useradd -m -u "${UID}" -g "${GID}" -s /bin/bash "${USERNAME}"; \
+    fi; \
+    if getent group "${USERNAME}" >/dev/null; then \
+      usermod -g "${USERNAME}" "${USERNAME}"; \
+    fi
+
+WORKDIR /workspace
+RUN chown -R ${UID}:${GID} /workspace
+USER ${USERNAME}
+
+ENV HOME=/home/${USERNAME}
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/${USERNAME}/.local/bin:${PATH}"
+
+CMD ["bash"]

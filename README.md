@@ -134,6 +134,7 @@ Available profiles typically include:
 - **default** — general-purpose (Python, uv, build tools)
 - **nodejs** — Node.js and npm
 - **rust** — Rust toolchain
+- **java** — OpenJDK 21 + Maven & Gradle
 
 ## 🧰 Commands
 
