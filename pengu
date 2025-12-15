@@ -6,13 +6,44 @@
 set -euo pipefail
 
 # Choose engine
-if command -v podman >/dev/null 2>&1; then ENG=podman
-elif command -v docker >/dev/null 2>&1; then ENG=docker
-else echo "Need podman or docker in PATH." >&2; exit 1; fi
+if command -v podman >/dev/null 2>&1; then
+  ENG=podman
+elif command -v docker >/dev/null 2>&1; then
+  ENG=docker
+else
+  echo "Need podman or docker in PATH." >&2
+  exit 1
+fi
 
-PROJECT="${PROJECT_NAME:-$(basename "$PWD")}"
+uid(){ id -u; }
+gid(){ id -g; }
+
+# Normalize names for container/image/volume safety:
+# - lower-case
+# - replace any non [a-z0-9_.-] with '-'
+# - collapse repeated '-' and trim leading/trailing '-'
+slugify() {
+  local s="${1:-}"
+  s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]')"
+  s="$(printf '%s' "$s" | sed -E 's/[^a-z0-9_.-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')"
+  printf '%s' "$s"
+}
+
+PROJECT_RAW="${PROJECT_NAME:-$(basename "$PWD")}"
+PROJECT="$(slugify "$PROJECT_RAW")"
+
+# --- Parse command line ---
 CMD="${1:-}"
-PROFILE="${2:-default}"
+
+# Special-case "profile" subcommands so they don't reuse the PROFILE slot.
+if [ "$CMD" = "profile" ]; then
+  PROFILE="(n/a)"
+  PROFILE_SUBCMD="${2:-}"
+  PROFILE_NAME="${3:-}"
+else
+  PROFILE_RAW="${2:-default}"
+  PROFILE="$(slugify "$PROFILE_RAW")"
+fi
 
 IMAGE="pengu:${PROJECT}-${PROFILE}"
 CONTAINER="${PROJECT}-pengu-${PROFILE}"
@@ -20,8 +51,10 @@ HOMEVOL="${PROJECT}-pengu-${PROFILE}-home"
 APTVOL="${PROJECT}-pengu-${PROFILE}-apt"
 LISTSVOL="${PROJECT}-pengu-${PROFILE}-lists"
 
-uid(){ id -u; }
-gid(){ id -g; }
+# SELinux detection (Linux only). Apply :Z only when SELinux is enabled.
+selinux_enabled() {
+  [ -e /sys/fs/selinux/enforce ] && [ "$(cat /sys/fs/selinux/enforce 2>/dev/null || echo 0)" = "1" ]
+}
 
 resolve_pengufile() {
   local profile="$1"
@@ -59,11 +92,15 @@ resolve_pengufile() {
 }
 
 container_exists() {
-  if [ "$ENG" = "podman" ]; then
-    $ENG container exists "$CONTAINER" >/dev/null 2>&1 || return 1
-  else
-    $ENG container inspect "$CONTAINER" >/dev/null 2>&1 || return 1
-  fi
+  # Works on both docker and podman; podman also has `container exists` but inspect is enough.
+  $ENG container inspect "$CONTAINER" >/dev/null 2>&1
+}
+
+container_running() {
+  # Return 0 if running, 1 otherwise
+  local state=""
+  state="$($ENG container inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || echo "false")"
+  [ "$state" = "true" ]
 }
 
 stop_container() {
@@ -77,11 +114,7 @@ remove_container() {
     return
   fi
 
-  if [ "$ENG" = "podman" ]; then
-    $ENG rm -f "$CONTAINER" >/dev/null 2>&1 || $ENG container rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  else
-    $ENG rm -f "$CONTAINER" >/dev/null 2>&1 || $ENG container rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  fi
+  $ENG rm -f "$CONTAINER" >/dev/null 2>&1 || true
 
   if container_exists; then
     echo "Warning: unable to remove container $CONTAINER" >&2
@@ -102,8 +135,8 @@ USAGE:
 
 COMMANDS:
   up       Start Pengu container (builds if needed)
-           - Creates a new Ubuntu environment for this project
-           - Builds the Docker image if it doesn't exist
+           - Creates a new Linux environment for this project/profile
+           - Builds the image from the selected Pengufile if it doesn't exist
            - Starts the container with persistent volumes
 
   shell    Enter Pengu shell as regular user
@@ -130,6 +163,7 @@ COMMANDS:
   commit   Save current container state to image
            - Creates a new image with all installed packages
            - Useful for creating custom base images
+           - Requires the container to exist
 
   nuke     Complete removal (container + all data)
            - ⚠️  DESTRUCTIVE: Removes everything permanently
@@ -143,19 +177,21 @@ COMMANDS:
   help     Show this help message
 
 EXAMPLES:
-  ./pengu up && ./pengu shell            # Default profile
-  ./pengu up java && ./pengu shell java  # Named profile
-  ./pengu root                           # Enter as root
-  ./pengu stop && ./pengu rm             # Clean stop and remove
-  ./pengu profile available              # See available profiles
-  ./pengu profile install rust           # Install Rust profile
+  ./pengu up && ./pengu shell              # Default profile
+  ./pengu up java && ./pengu shell java    # Named profile
+  ./pengu root rust                         # Enter as root (rust profile)
+  ./pengu stop && ./pengu rm               # Clean stop and remove
+  ./pengu profile available                # See available profiles
+  ./pengu profile install rust             # Install Rust profile
 
-PROJECT: $PROJECT
-PROFILE: $PROFILE
+PROJECT: $PROJECT_RAW  (normalized: $PROJECT)
 ENGINE:  $ENG
-
-For more info: https://github.com/soyrochus/pengu
 EOF
+  if [ "${PROFILE:-}" != "(n/a)" ]; then
+    cat <<EOF
+PROFILE: $PROFILE_RAW  (normalized: $PROFILE)
+EOF
+  fi
 }
 
 build() {
@@ -175,47 +211,66 @@ create_if_needed() {
   local volume_opts=""
 
   if [ "$ENG" = "podman" ]; then
-    # Workspace bind mount needs :U to be writable under userns mapping.
-    # On Linux with SELinux, keep :Z as well. On macOS, :Z is unnecessary but usually harmless.
-    workspace_opts=":Z,U"
-    volume_opts=":Z"
+    # :U ensures workspace bind mount is writable under user namespace mapping.
+    # :Z is only needed when SELinux is enabled.
+    if selinux_enabled; then
+      workspace_opts=":Z,U"
+      volume_opts=":Z"
+    else
+      workspace_opts=":U"
+      volume_opts=""
+    fi
   fi
 
-  container_exists || \
-  $ENG create --name "$CONTAINER" \
-    -v "$PWD:/workspace${workspace_opts}" \
-    -v "$HOMEVOL:/home/pengu${volume_opts}" \
-    -v "$APTVOL:/var/cache/apt${volume_opts}" \
-    -v "$LISTSVOL:/var/lib/apt/lists${volume_opts}" \
-    "$IMAGE" tail -f /dev/null >/dev/null
+  if ! container_exists; then
+    $ENG create --name "$CONTAINER" \
+      -v "$PWD:/workspace${workspace_opts}" \
+      -v "$HOMEVOL:/home/pengu${volume_opts}" \
+      -v "$APTVOL:/var/cache/apt${volume_opts}" \
+      -v "$LISTSVOL:/var/lib/apt/lists${volume_opts}" \
+      "$IMAGE" tail -f /dev/null >/dev/null
+  fi
+}
+
+ensure_running() {
+  # Ensure image exists, container exists, and container is running.
+  # Do not use exec failures as control flow.
+  if ! container_exists; then
+    build
+    create_if_needed
+  fi
+
+  if ! container_running; then
+    $ENG start "$CONTAINER" >/dev/null
+  fi
 }
 
 profile_list() {
   local base=".pengu"
   local found=0
-  
+
   if [ -f "${base}/Pengufile" ]; then
-    echo "📄 default (${base}/Pengufile)"
+    echo "default (${base}/Pengufile)"
     found=1
   fi
-  
+
   for file in "${base}"/Pengufile.*; do
     if [ -f "$file" ]; then
       local name="${file##*.}"
-      echo "📄 $name ($file)"
+      echo "$name ($file)"
       found=1
     fi
   done
-  
+
   if [ $found -eq 0 ]; then
-    echo "No profiles found. Use 'pengu profile install <name>' to download one."
+    echo "No profiles found. Use './pengu profile install <name>' to download one."
   fi
 }
 
 profile_available() {
   echo "Fetching available profiles..."
   local url="https://raw.githubusercontent.com/soyrochus/pengu/main/profiles/profiles.txt"
-  
+
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$url" || { echo "Failed to fetch profiles from server."; return 1; }
   elif command -v wget >/dev/null 2>&1; then
@@ -233,9 +288,9 @@ profile_install() {
     echo "Example: ./pengu profile install rust"
     return 1
   fi
-  
+
   local dst=".pengu/Pengufile.${name}"
-  
+
   if [ -f "$dst" ]; then
     read -rp "Profile '$name' already exists. Overwrite? [y/N] " ans
     if [[ ! "$ans" =~ ^([yY]|yes)$ ]]; then
@@ -243,12 +298,12 @@ profile_install() {
       return 0
     fi
   fi
-  
+
   echo "Installing profile '$name'..."
   local url="https://raw.githubusercontent.com/soyrochus/pengu/main/profiles/${name}/Dockerfile"
-  
+
   mkdir -p ".pengu"
-  
+
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$url" -o "$dst" || {
       rm -f "$dst"
@@ -265,28 +320,63 @@ profile_install() {
     echo "Error: Neither curl nor wget found. Cannot install profile."
     return 1
   fi
-  
+
   echo "✓ Profile '$name' installed to $dst"
 }
 
 case "$CMD" in
-  up)      build; create_if_needed; $ENG start "$CONTAINER"; echo "Pengu up → ./pengu shell $PROFILE" ;;
-  shell)   $ENG exec -it "$CONTAINER" bash || { "$0" up "$PROFILE"; $ENG exec -it "$CONTAINER" bash; } ;;
-  root)    $ENG exec -it --user 0 "$CONTAINER" bash || { "$0" up "$PROFILE"; $ENG exec -it --user 0 "$CONTAINER" bash; } ;;
-  stop)    stop_container ;;
-  rm)      remove_container ;;
-  rebuild) remove_container; build; create_if_needed; $ENG start "$CONTAINER" ;;
-  commit)  $ENG commit "$CONTAINER" "$IMAGE"; echo "Committed → $IMAGE" ;;
-  nuke)    stop_container; remove_container; remove_volumes ;;
+  up)
+    # Build always (cheap if cached) to ensure Pengufile changes apply.
+    build
+    create_if_needed
+    $ENG start "$CONTAINER" >/dev/null || true
+    echo "Pengu up → ./pengu shell $PROFILE"
+    ;;
+  shell)
+    ensure_running
+    $ENG exec -it "$CONTAINER" bash
+    ;;
+  root)
+    ensure_running
+    $ENG exec -it --user 0 "$CONTAINER" bash
+    ;;
+  stop)
+    stop_container
+    ;;
+  rm)
+    remove_container
+    ;;
+  rebuild)
+    remove_container
+    build
+    create_if_needed
+    $ENG start "$CONTAINER" >/dev/null || true
+    ;;
+  commit)
+    if ! container_exists; then
+      echo "Error: cannot commit. Container '$CONTAINER' does not exist." >&2
+      echo "Run: ./pengu up ${PROFILE:-default}" >&2
+      exit 1
+    fi
+    $ENG commit "$CONTAINER" "$IMAGE" >/dev/null
+    echo "Committed → $IMAGE"
+    ;;
+  nuke)
+    stop_container
+    remove_container
+    remove_volumes
+    ;;
   profile)
-    case "${2:-}" in
+    case "${PROFILE_SUBCMD:-}" in
       list)      profile_list ;;
       available) profile_available ;;
-      install)   profile_install "${3:-}" ;;
+      install)   profile_install "${PROFILE_NAME:-}" ;;
       *)         echo "Usage: ./pengu profile {list|available|install <name>}" ;;
     esac
     ;;
-  help|--help|-h) show_help ;;
+  help|--help|-h)
+    show_help
+    ;;
   "")
     echo "Usage: ./pengu {up|shell|root|stop|rm|rebuild|commit|nuke|profile|help} [PROFILE]"
     echo "Try './pengu help' for more information."

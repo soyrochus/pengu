@@ -13,7 +13,7 @@
 
 ![Pengu](images/pengu-min.png)
 
-Pengu acts as a *personal Ubuntu machine per project*, mapped directly to your working directory.  
+Pengu acts as a *personal Linux machine per project*, mapped directly to your working directory.  
 Anything you install or configure inside Pengu persists across sessions, restarts, and reboots.
 
 > 🧩 One project → one Pengu container **per profile**  
@@ -21,12 +21,12 @@ Anything you install or configure inside Pengu persists across sessions, restart
 
 ## 🚀 What Pengu does
 
-- Runs **Ubuntu 24.04** in a container (Podman or Docker)
+- Runs **Ubuntu 24.04** in a container (Podman or Docker; other Linux distros possible)
 - Mounts your project folder at `/workspace`
 - Keeps a **persistent Linux home directory** per project/profile
 - Lets you install anything (`apt`, `pip`, `uv`, language toolchains)
 - Works identically across macOS, Linux, and Windows
-- By changing or using your own "Pengufile" (Dockerfile) you can use any other Linux, software installacion or system configurtaion to suite your use case
+- By changing or using your own "Pengufile" (Dockerfile) you can use any other Linux, software installation or system configurtaion to suite your use case
 
 In short:  
 > Pengu gives you a clean, repeatable Linux workstation for every project.
@@ -47,7 +47,7 @@ In short:
 
 Run this in **any project folder** (it does not need to be a git repo).
 
-### Linux / macOS (Bash)
+### Linux / MacOS (Bash)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/soyrochus/pengu/main/pengu-install.sh | bash -s -- -y
